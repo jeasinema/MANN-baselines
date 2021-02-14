@@ -7,6 +7,7 @@ FloatTensor = torch.cuda.FloatTensor if use_gpu else torch.FloatTensor
 LongTensor = torch.cuda.LongTensor if use_gpu else torch.LongTensor
 ByteTensor = torch.cuda.ByteTensor if use_gpu else torch.ByteTensor
 
+LOG_EPS=1e-16
 
 def to_one_hot(x, dim):
     # Input:
