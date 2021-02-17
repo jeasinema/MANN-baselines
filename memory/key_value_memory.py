@@ -10,7 +10,7 @@ from memory import ValueMemory
 
 class KeyValueMemory(ValueMemory):
     """ValueMemory with:
-    
+
         -K-V arch
         used by [so far I don't know]    
     """
@@ -50,7 +50,8 @@ class KeyValueMemory(ValueMemory):
 
         :param k: shape (B, self.key_size)
         """
-        sim = F.cosine_similarity(self.memory_key + LOG_EPS, k.unsqueeze(1) + LOG_EPS, dim=-1)           
+        B = k.size(0)
+        sim = F.cosine_similarity(self.memory_key[:B] + LOG_EPS, k.unsqueeze(1) + LOG_EPS, dim=-1)           
         if topk != -1:
             # Zero-out the non-topk
             ind = torch.topk(sim, self.mem_size - topk, dim=-1, largest=False)[1]
@@ -65,10 +66,11 @@ class KeyValueMemory(ValueMemory):
         :param k: shape (B, self.key_size)
         :param v: shape (B, self.value_size)
         """
+        B = w.size(0)
         write_k = torch.matmul(w.unsqueeze(-1), k.unsqueeze(1))
         write_v = torch.matmul(w.unsqueeze(-1), v.unsqueeze(1))
-        self.memory_key = self.memory_key + write_k
-        self.memory = self.memory + write_v
+        self.memory_key[:B] = self.memory_key[:B] + write_k
+        self.memory[:B] = self.memory[:B] + write_v
 
 
 class DNDMemory(KeyValueMemory):
@@ -87,6 +89,7 @@ class DNDMemory(KeyValueMemory):
         # Free CPU/GPU memory
         del self.memory
         del self.memory_key
+        torch.cuda.empty_cache()
         if self.jumpy_bp:
             self.register_buffer('memory', torch.FloatTensor(self.B, self.init_mem_size, self.value_size))
             self.register_buffer('memory_key', torch.FloatTensor(self.B, self.init_mem_size, self.key_size))
@@ -107,16 +110,17 @@ class DNDMemory(KeyValueMemory):
         :param k: shape (B, self.key_size)
         :param v: shape (B, self.value_size)
         """
+        B = k.size(0)
         self.used_mem += 1
         if self.used_mem > self.mem_size:
             self.mem_size += 1
-            self.memory.resize_(self.B, self.mem_size, self.value_size)
-            self.memory_key.resize_(self.B, self.mem_size, self.key_size)
-            self.memory[:, -1, :] = v 
-            self.memory_key[:, -1, :] = k 
+            self.memory.resize_(self.batch_size, self.mem_size, self.value_size)
+            self.memory_key.resize_(self.batch_size, self.mem_size, self.key_size)
+            self.memory[:B, -1, :] = v 
+            self.memory_key[:B, -1, :] = k 
         else:
-            self.memory[:, self.used_mem-1, :] = v
-            self.memory_key[:, self.used_mem-1, :] = k
+            self.memory[:B, self.used_mem-1, :] = v
+            self.memory_key[:B, self.used_mem-1, :] = k
 
 
 class MRAMemory(DNDMemory):

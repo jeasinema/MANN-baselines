@@ -24,8 +24,8 @@ class ValueMemory(nn.Module):
             self.register_buffer('memory', torch.FloatTensor(self.B, self.mem_size, self.value_size))
         else:
             self.register_parameter('memory', nn.Parameter(torch.FloatTensor(self.B, self.mem_size, self.value_size)))
-        stdev = 1 / (np.sqrt(self.mem_size + self.value_size))
-        nn.init.uniform_(self.memory, -stdev, stdev)
+
+        self.reset()
 
     @property
     def shape(self, with_batch_dim=False):
@@ -46,7 +46,8 @@ class ValueMemory(nn.Module):
 
         :param v: shape (B, self.value_size)
         """
-        sim = F.cosine_similarity(self.memory + LOG_EPS, v.unsqueeze(1) + LOG_EPS, dim=-1)           
+        B = v.size(0)
+        sim = F.cosine_similarity(self.memory[:B] + LOG_EPS, v.unsqueeze(1) + LOG_EPS, dim=-1)           
         if topk != -1:
             # Zero-out the non-topk
             ind = torch.topk(sim, self.mem_size - topk, dim=-1, largest=False)[1]
@@ -60,8 +61,9 @@ class ValueMemory(nn.Module):
         :param w: shape (B, self.mem_size)
         :param v: shape (B, self.value_size)
         """
+        B = w.size(0)
         write_v = torch.matmul(w.unsqueeze(-1), v.unsqueeze(1))
-        self.memory = self.memory + write_v
+        self.memory[:B] = self.memory[:B] + write_v
 
     def read(self, w):
         """
@@ -69,7 +71,8 @@ class ValueMemory(nn.Module):
 
         :param w: shape (B, self.mem_size)
         """
-        return torch.matmul(w.unsqueeze(1), self.memory).unsqueeze(1)
+        B = w.size(0)
+        return torch.matmul(w.unsqueeze(1), self.memory[:B]).unsqueeze(1)
 
 
 class NTMMemory(ValueMemory):
@@ -86,9 +89,10 @@ class NTMMemory(ValueMemory):
         :param add_v: shape (B, self.value_size)
         :param del_v: shape (B, self.value_size)
         """
-    write_add_v = torch.matmul(w.unsqueeze(-1), add_v.unsqueeze(1))
-    write_del_v = torch.matmul(w.unsqueeze(-1), del_v.unsqueeze(1))
-    self.memory = self.memory * (1 - write_del_v) + write_add_v 
+        B = w.size(0)
+        write_add_v = torch.matmul(w.unsqueeze(-1), add_v.unsqueeze(1))
+        write_del_v = torch.matmul(w.unsqueeze(-1), del_v.unsqueeze(1))
+        self.memory[:B] = self.memory[:B] * (1 - write_del_v) + write_add_v 
 
 
 class MERLINMemory(ValueMemory):
@@ -106,6 +110,7 @@ class MERLINMemory(ValueMemory):
         self.mem_size = self.init_mem_size
         # Free CPU/GPU memory
         del self.memory
+        torch.cuda.empty_cache()
         if self.jumpy_bp:
             self.register_buffer('memory', torch.FloatTensor(self.B, self.init_mem_size, self.value_size))
         else:
@@ -121,13 +126,14 @@ class MERLINMemory(ValueMemory):
 
         :param v: shape (B, self.value_size)
         """
+        B = v.size(0)
         self.used_mem += 1
         if self.used_mem > self.mem_size:
             self.mem_size += 1
-            self.memory.resize_(self.B, self.mem_size, self.value_size)
-            self.memory[:, -1, :] = v 
+            self.memory.resize_(self.batch_size, self.mem_size, self.value_size)
+            self.memory[:B, -1, :] = v 
         else:
-            self.memory[:, self.used_mem-1, :] = v
+            self.memory[:B, self.used_mem-1, :] = v
 
 
 class DNCMemory(NTMMemory):
@@ -139,7 +145,7 @@ class DNCMemory(NTMMemory):
     raise NotImplementedError
 
 
-class RTSMemory(DNDMemory):
+class RTSMemory(MERLINMemory):
     """MERLINMemory with:
 
         -all-reduce read
