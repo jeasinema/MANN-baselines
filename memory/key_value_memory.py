@@ -44,7 +44,7 @@ class KeyValueMemory(ValueMemory):
 
     def similarity(self, k, topk=-1):
         """
-        Output: shape (B, self.mem_size)
+        :output similarity: shape (B, self.mem_size)
 
         The output should be treated unnormalized.
 
@@ -60,8 +60,6 @@ class KeyValueMemory(ValueMemory):
 
     def write(self, w, k, v):
         """
-        Output: None
-
         :param w: shape (B, self.mem_size)
         :param k: shape (B, self.key_size)
         :param v: shape (B, self.value_size)
@@ -103,8 +101,6 @@ class DNDMemory(KeyValueMemory):
 
     def write(self, k, v):
         """
-        Output: None
-
         TODO (jxma): better re-allocation strategy
 
         :param k: shape (B, self.key_size)

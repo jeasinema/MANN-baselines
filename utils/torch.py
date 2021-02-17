@@ -60,3 +60,21 @@ def set_lr(optimizer, lr):
     s = optimizer.state_dict()
     s['param_groups'][0]['lr'] = lr
     optimizer.load_state_dict(s)
+
+
+def split_cols(mat, lengths):
+    """Split a 2D matrix to variable length columns."""
+    assert mat.size()[1] == sum(lengths), "Lengths must be summed to num columns"
+    l = np.cumsum([0] + lengths)
+    results = []
+    for s, e in zip(l[:-1], l[1:]):
+        results += [mat[:, s:e]]
+    return results
+
+
+def squash(x, outer_dims):
+    assert x.dim() > outer_dims
+    return x.reshape([-1] + list(x.shape[outer_dims:])), list(x.shape)
+
+def unsquash(x, orig_shape):
+    return x.reshape(orig_shape)

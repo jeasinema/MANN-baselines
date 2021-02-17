@@ -40,8 +40,7 @@ class ValueMemory(nn.Module):
 
     def similarity(self, v, topk=-1):
         """
-        Output: shape (B, self.mem_size)
-
+        :output similarity: shape (B, self.mem_size)
         The output should be treated unnormalized.
 
         :param v: shape (B, self.value_size)
@@ -56,8 +55,6 @@ class ValueMemory(nn.Module):
 
     def write(self, w, v):
         """
-        Output: None
-
         :param w: shape (B, self.mem_size)
         :param v: shape (B, self.value_size)
         """
@@ -67,12 +64,12 @@ class ValueMemory(nn.Module):
 
     def read(self, w):
         """
-        Output: shape (B, self.value_size)
+        :output read value: shape (B, self.value_size)
 
         :param w: shape (B, self.mem_size)
         """
         B = w.size(0)
-        return torch.matmul(w.unsqueeze(1), self.memory[:B]).unsqueeze(1)
+        return torch.matmul(w.unsqueeze(1), self.memory[:B]).squeeze(1)
 
 
 class NTMMemory(ValueMemory):
@@ -83,8 +80,6 @@ class NTMMemory(ValueMemory):
     """
     def write(self, w, add_v, del_v):
         """
-        Output: None
-
         :param w: shape (B, self.mem_size)
         :param add_v: shape (B, self.value_size)
         :param del_v: shape (B, self.value_size)
@@ -120,8 +115,6 @@ class MERLINMemory(ValueMemory):
 
     def write(self, v):
         """
-        Output: None
-
         TODO (jxma): better re-allocation strategy
 
         :param v: shape (B, self.value_size)
@@ -142,7 +135,7 @@ class DNCMemory(NTMMemory):
         -learnable allocation
         used by DNC    
     """
-    raise NotImplementedError
+    pass
 
 
 class RTSMemory(MERLINMemory):
@@ -153,6 +146,6 @@ class RTSMemory(MERLINMemory):
     """
     def read(self):
         """
-        Output: shape (self.B, self.mem_size, self.value_size)
+        :output read value: shape (self.B, self.mem_size, self.value_size)
         """
         return self.memory
