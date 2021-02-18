@@ -8,17 +8,23 @@ import haste_pytorch as haste
 from memory import *
 
 
-class NTM(nn.Module):
+class SimpleNTM(nn.Module):
+    """
+    NTM with simplified r/w (simplifed content-based only addressing)
+    https://github.com/loudinthecloud/pytorch-ntm
+    """
     def __init__(
         self,
         # Basics
         encoder,
         encoder_output_size,
-        ntm_output_size,
+        model_output_size,
         batch_size,
         # Memory
+        mem_class=ValueMemory,
         mem_size=10,
         mem_value_size=256,
+        mem_extra_args=None,
         # Controller
         controller='lstm',
         controller_hidden_units=None,
@@ -26,20 +32,22 @@ class NTM(nn.Module):
         # R/W head
         num_read_heads=1,
         num_write_heads=1,
-        head_beta_g_s_gamma=(1,1,3,1)):
-        super(NTM, self).__init__()
+        read_length=None,
+        write_length=None):
+        super(SimpleNTM, self).__init__()
         self.encoder = encoder
         # output size of the encoder
         self.encoder_output_size = encoder_output_size
-        self.ntm_output_size = ntm_output_size
-        self.batch_size = batch_size
+        self.model_output_size = model_output_size
+        self.batch_sizeatch_size = batch_size
 
-        self.memory = NTMMemory(mem_size, mem_value_size, batch_size)
+        mem_extra_args = mem_extra_args if mem_extra_args else []
+        self.memory = mem_class(mem_size, mem_value_size, batch_size, *mem_extra_args)
 
         self.controller_type = controller
         controller_hidden_units = controller_hidden_units if controller_hidden_units else []
         self.controller_output_size = controller_output_size
-        self.controller_num_layer = len(controller_hidden_units) + 1     
+        self.controller_num_layer = len(controller_hidden_units) + 1
         if controller == 'mlp':
             self.controller = []
             last_dim = self.encoder_output_size + num_read_heads * mem_value_size
@@ -48,7 +56,7 @@ class NTM(nn.Module):
                 self.controller.append(nn.ReLU())
                 last_dim = nh
             self.controller.append(nn.Linear(last_dim, controller_output_size))
-            self.controller = nn.Sequential(*self.controller)        
+            self.controller = nn.Sequential(*self.controller)
         elif controller == 'lstm':
             assert self.controller_num_layer == 1
             if self.controller_num_layer > 1:
@@ -64,8 +72,8 @@ class NTM(nn.Module):
         else:
             raise NotImplementedError
 
-        self.read_length = [mem_value_size, *head_beta_g_s_gamma]
-        self.write_length = [mem_value_size, *head_beta_g_s_gamma, mem_value_size, mem_value_size]
+        self.read_length = read_length if read_length else [mem_value_size]
+        self.write_length = write_length if write_length else [mem_value_size, mem_value_size]
         self.read_heads = nn.ModuleList([
             nn.Linear(self.controller_output_size, sum(self.read_length))
             for _ in range(num_read_heads)
@@ -78,10 +86,9 @@ class NTM(nn.Module):
         # If random, then should be different across different heads
         self.register_parameter('init_read', nn.Parameter(torch.FloatTensor(1, mem_value_size).fill_(0)))
 
-
         self.output_layer = nn.Linear(
             self.controller_output_size + mem_value_size * num_read_heads,
-            self.ntm_output_size
+            self.model_output_size
         )
 
         self.reset(reset_memory=False)
@@ -104,7 +111,7 @@ class NTM(nn.Module):
                 else:
                     stdev = 5 / (np.sqrt(self.encoder_output_size +  self.controller_output_size))
                     nn.init.uniform_(p, -stdev, stdev)
-        for head in self.read_heads: 
+        for head in self.read_heads:
             nn.init.xavier_uniform_(head.weight, gain=1.4)
             nn.init.normal_(head.bias, std=0.01)
         for head in self.write_heads:
@@ -116,14 +123,14 @@ class NTM(nn.Module):
     def init_state(self, batch_size=-1):
         """
         :output controller latent state:
-            shape (B, self.controller_num_layer, self.controller_output_size) 
+            shape (B, self.controller_num_layer, self.controller_output_size)
                 required by controller
         :output init read values:
-            shape list of (B, self.memory.value_size), length == len(self.read_heads) 
+            shape list of (B, self.memory.value_size), length == len(self.read_heads)
                 required by controller
         :output init r/w head weight:
-            shape list of (B, self.memory.mem_size), length == len(self.read_heads+self.write_heads) 
-                required by read/write head (interpolation) 
+            shape list of (B, self.memory.mem_size), length == len(self.read_heads+self.write_heads)
+                required by read/write head (interpolation)
         """
         B = batch_size if batch_size else self.batch_size
         if self.controller_type == 'lstm':
@@ -143,24 +150,183 @@ class NTM(nn.Module):
             for _ in range(len(self.read_heads) + len(self.write_heads))
         ]
         return init_controller_state, init_reads, init_rwhead_state
-    
+
+    def _address(self, k):
+        """NTM Addressing (according to section 3.3).
+        :output weight: shape (B, self.memory.mem_size)
+
+        :param k: shape (B, .) The key vector.
+        """
+        # Handle Activations
+        k = k.clone()
+
+        # Content focus
+        sim = self.memory.similarity(k)
+        w = F.softmax(sim, dim=1)
+
+        return w
+
+    def _read(self, x, prev_rhead_state):
+        """
+        :output read value: shape list of (B, self.memory.value_size), length == len(self.read_heads)
+        :output r head weight: shape list of (B, self.memory.mem_size), length == len(self.read_heads)
+
+        :param x: shape (B, self.controller_output_size)
+        :param prev_rhead_state: list of (B, self.memory.mem_size), length == len(self.read_heads)
+        """
+        reads = []
+        ws = []
+        for rhead in self.read_heads:
+            k = rhead(x)
+            w = self._address(k)
+            r = self.memory.read(w)
+            ws.append(w)
+            reads.append(r)
+        return reads, ws
+
+    def _write(self, x, prev_whead_state):
+        """
+        :output w head weight: shape list of (B, self.memory.mem_size), length == len(self.write_heads)
+
+        :param x: shape (B, self.controller_output_size)
+        :param prev_whead_state: list of (B, self.memory.mem_size), length == len(self.write_heads)
+        """
+        ws = []
+        for whead in self.write_heads:
+            o = whead(x)
+            k, v = split_cols(o, self.write_length)
+            w = self._address(k)
+            self.memory.write(w, v)
+            ws.append(w)
+        return ws
+
+    def forward_step(self, x, prev_latent=None):
+        """
+        :output ntm output: shape (B, self.model_output_size)
+        :output current latent state:
+            tuple(
+                shape (B, self.controller_num_layer, self.controller_output_size)
+                    -- controller latent state, required by controller
+                shape list of (B, self.memory.value_size), length == len(self.read_heads)
+                    -- init read, required by controller
+                shape list of (B, self.memory.mem_size), length == len(self.read_heads+self.write_heads)
+                    -- init head rw/ weight, required by read/write head (interpolation)
+            )
+
+        :param x: shape (B, ...)
+        :param prev_latent: same as current latent state
+        """
+        if not prev_latent:
+            prev_latent = self.init_state(x.size(0))
+        prev_controller_state, prev_reads, prev_rwhead_state = prev_latent
+
+        x_emb = self.encoder(x)
+        controller_input = torch.cat([x_emb] + prev_reads, dim=-1)
+        if self.controller_type == 'lstm':
+            controller_output, controller_state = self.controller(
+                controller_input.unsqueeze(0),
+                prev_controller_state
+            )
+            controller_output = controller_output[0]
+        else:
+            controller_output = self.controller(controller_input)
+            controller_state = None
+
+        reads, rhead_state = self._read(controller_output, prev_rwhead_state[:len(self.read_heads)])
+        whead_state = self._write(controller_output, prev_rwhead_state[len(self.read_heads):])
+
+        output = self.output_layer(torch.cat([controller_output] + reads, dim=-1))
+        current_state = (controller_state, reads, rhead_state+whead_state)
+
+        return output, current_state
+
+    def forward(self, x, init_latent=None):
+        """
+        :output ntm output: shape (T, B, self.model_output_size)
+        :output current latent state:
+            tuple(
+                shape (B, self.controller_num_layer, self.controller_output_size)
+                    -- controller latent state, required by controller
+                shape list of (B, self.memory.value_size), length == len(self.read_heads)
+                    -- init read, required by controller
+                shape list of (B, self.memory.mem_size), length == len(self.read_heads+self.write_heads)
+                    -- init head rw/ weight, required by read/write head (interpolation)
+            )
+
+        :param  x: shape (T, B, ...)
+        :param init_latent: shape same as current latent state
+        """
+        T = x.size(0)
+        outputs = []
+        prev_latent = init_latent
+        for i in range(T):
+            o, prev_latent = self.forward_step(x[i], prev_latent)
+            outputs.append(o)
+
+        return torch.stack(outputs), prev_latent
+
+
+class NTM(SimpleNTM):
+    """
+    Complete NTM (content-based + localtion-based addressing)
+        https://github.com/loudinthecloud/pytorch-ntm
+    """
+    def __init__(
+        self,
+        # Basics
+        encoder,
+        encoder_output_size,
+        model_output_size,
+        batch_size,
+        # Memory
+        mem_size=10,
+        mem_value_size=256,
+        # Controller
+        controller='lstm',
+        controller_hidden_units=None,
+        controller_output_size=128,
+        # R/W head
+        num_read_heads=1,
+        num_write_heads=1,
+        head_beta_g_s_gamma=(1,1,3,1)):
+        super(NTM, self).__init__(
+            # Basics
+            encoder=encoder,
+            encoder_output_size=encoder_output_size,
+            model_output_size=model_output_size,
+            batch_size=batch_size,
+            # Memory
+            mem_class=NTMMemory,
+            mem_size=mem_size,
+            mem_value_size=mem_value_size,
+            # Controller
+            controller=controller,
+            controller_hidden_units=controller_hidden_units,
+            controller_output_size=controller_output_size,
+            # R/W head
+            num_read_heads=num_read_heads,
+            num_write_heads=num_write_heads,
+            read_length=[mem_value_size, *head_beta_g_s_gamma],
+            write_length=[mem_value_size, *head_beta_g_s_gamma, mem_value_size, mem_value_size]
+        )
+
     def _convolve(self, w, s):
         """Circular convolution implementation."""
         assert s.size(0) == 3
         t = torch.cat([w[-1:], w, w[:1]])
         c = F.conv1d(t.view(1, 1, -1), s.view(1, 1, -1)).view(-1)
         return c
-    
+
     def _address(self, k, β, g, s, γ, w_prev):
         """NTM Addressing (according to section 3.3).
         :output weight: shape (B, self.memory.mem_size)
 
         :param k: shape (B, .) The key vector.
         :param β: shape (B, .) The key strength (focus).
-        :param g: shape (B, .) Scalar interpolation gate (with previous weighting).
-        :param s: shape (B, .) Shift weighting.
-        :param γ: shape (B, .) Sharpen weighting scalar.
-        :param w_prev: shape (B, self.memory.mem_size) The weighting produced in the previous time step.
+        :param g: shape (B, .) Scalar interpolation gate (with previous weight).
+        :param s: shape (B, .) Shift weight.
+        :param γ: shape (B, .) Sharpen weight scalar.
+        :param w_prev: shape (B, self.memory.mem_size) The weight produced in the previous time step.
         """
         # Handle Activations
         k = k.clone()
@@ -198,7 +364,7 @@ class NTM(nn.Module):
         """
         :output read value: shape list of (B, self.memory.value_size), length == len(self.read_heads)
         :output r head weight: shape list of (B, self.memory.mem_size), length == len(self.read_heads)
-        
+
         :param x: shape (B, self.controller_output_size)
         :param prev_rhead_state: list of (B, self.memory.mem_size), length == len(self.read_heads)
         """
@@ -216,7 +382,7 @@ class NTM(nn.Module):
     def _write(self, x, prev_whead_state):
         """
         :output w head weight: shape list of (B, self.memory.mem_size), length == len(self.write_heads)
-        
+
         :param x: shape (B, self.controller_output_size)
         :param prev_whead_state: list of (B, self.memory.mem_size), length == len(self.write_heads)
         """
@@ -230,84 +396,127 @@ class NTM(nn.Module):
             ws.append(w)
         return ws
 
-    def forward_step(self, x, prev_latent=None):
-        """
-        :output ntm output: shape (B, self.ntm_output_size)
-        :output current latent state:
-            tuple(
-                shape (B, self.controller_num_layer, self.controller_output_size) 
-                    -- controller latent state, required by controller
-                shape list of (B, self.memory.value_size), length == len(self.read_heads) 
-                    -- init read, required by controller
-                shape list of (B, self.memory.mem_size), length == len(self.read_heads+self.write_heads) 
-                    -- init head rw/ weight, required by read/write head (interpolation) 
-            )
 
-        :param x: shape (B, ...)
-        :param prev_latent: same as current latent state
-        """
-        if not prev_latent:
-            prev_latent = self.init_state(x.size(0))
-        prev_controller_state, prev_reads, prev_rwhead_state = prev_latent
-
-        x_emb = self.encoder(x)
-        controller_input = torch.cat([x_emb] + prev_reads, dim=-1)
-        if self.controller_type == 'lstm':
-            controller_output, controller_state = self.controller(
-                controller_input.unsqueeze(0),
-                prev_controller_state
-            )
-            controller_output = controller_output[0]
-        else:
-            controller_output = self.controller(controller_input)
-            controller_state = None
-
-        reads, rhead_state = self._read(controller_output, prev_rwhead_state[:len(self.read_heads)])
-        whead_state = self._write(controller_output, prev_rwhead_state[len(self.read_heads):])
-
-        output = self.output_layer(torch.cat([controller_output] + reads, dim=-1))
-        current_state = (controller_state, reads, rhead_state+whead_state)
-
-        return output, current_state
-
-    def forward(self, x, init_latent=None):
-        """
-        :output ntm output: shape (T, B, self.ntm_output_size)
-        :output current latent state:
-            tuple(
-                shape (B, self.controller_num_layer, self.controller_output_size) 
-                    -- controller latent state, required by controller
-                shape list of (B, self.memory.value_size), length == len(self.read_heads) 
-                    -- init read, required by controller
-                shape list of (B, self.memory.mem_size), length == len(self.read_heads+self.write_heads) 
-                    -- init head rw/ weight, required by read/write head (interpolation) 
-            )
-
-        :param  x: shape (T, B, ...)
-        :param init_latent: shape same as current latent state
-        """
-        T = x.size(0)
-        outputs = []
-        prev_latent = init_latent
-        for i in range(T):
-            o, prev_latent = self.forward_step(x[i], prev_latent)
-            outputs.append(o)
-        
-        return torch.stack(outputs), prev_latent
-
-class RLMEM(nn.Module):
-    """`RL-MEM` in MERLIN:
+class RLMEM(SimpleNTM):
+    """`RL-MEM` in MERLIN (MERLIN w/o variational loss)
 
         -value-based memory
         -simplified reading
-        -appening-based write
+        -overwritting-based write
     """
-    def __init__(self):
+    def __init__(
+        self,
+        # Basics
+        encoder,
+        encoder_output_size,
+        model_output_size,
+        batch_size,
+        # Memory
+        mem_size=10,
+        mem_value_size=256,
+        # Controller
+        controller='lstm',
+        controller_hidden_units=None,
+        controller_output_size=128,
+        # R/W head
+        num_read_heads=1,
+        num_write_heads=1,
+        gamma=1.0):
+        self.gamma = 1.0
+        super(RLMEM, self).__init__(
+            # Basics
+            encoder=encoder,
+            encoder_output_size=encoder_output_size,
+            model_output_size=model_output_size,
+            batch_size=batch_size,
+            # Memory
+            mem_class=MERLINMemory,
+            mem_size=mem_size,
+            mem_value_size=mem_value_size*2,
+            # Controller
+            controller=controller,
+            controller_hidden_units=controller_hidden_units,
+            controller_output_size=controller_output_size,
+            # R/W head
+            num_read_heads=num_read_heads,
+            num_write_heads=num_write_heads,
+            read_length=[mem_value_size*2, 1],
+            write_length=[mem_value_size]
+        )
+
+    def _address(self, k, β):
+        """NTM Addressing (according to section 3.3).
+        :output weight: shape (B, self.memory.mem_size)
+
+        :param k: shape (B, .) The key vector.
+        :param β: shape (B, .) The key strength (focus).
+        """
+        # Handle Activations
+        k = k.clone()
+        β = F.softplus(β)
+
+        # Content focus
+        sim = self.memory.similarity(k)
+        w = F.softmax(β * sim, dim=1)
+
+        return w
+
+    def _read(self, x, prev_rhead_state):
+        """
+        :output read value: shape list of (B, self.memory.value_size), length == len(self.read_heads)
+        :output r head weight: shape list of (B, self.memory.mem_size), length == len(self.read_heads)
+
+        :param x: shape (B, self.controller_output_size)
+        :param prev_rhead_state: list of (B, self.memory.mem_size), length == len(self.read_heads)
+        """
+        reads = []
+        ws = []
+        for rhead in self.read_heads:
+            o = rhead(x)
+            k, β = split_cols(o, self.read_length)
+            w = self._address(k, β)
+            r = self.memory.read(w)
+            ws.append(w)
+            reads.append(r)
+        return reads, ws
+
+    def _write(self, x, prev_whead_state):
+        """
+        :output w head weight: shape list of (B, self.memory.mem_size), length == len(self.write_heads)
+
+        :param x: shape (B, self.controller_output_size)
+        :param prev_whead_state: list of ((B, self.memory.mem_size) * 2), length == len(self.write_heads)
+        """
+        ws = []
+        for whead, w_prev in zip(self.write_heads, prev_whead_state):
+            if type(w_prev) is tuple:
+                w_ret_prev, w_wr_prev = w_prev
+            # prev_whead_state is initialized
+            else:
+                w_ret_prev, w_wr_prev = w_prev, w_prev.clone()
+            v = whead(x)
+            w_ret = self.gamma * w_ret_prev + (1 - self.gamma) * w_wr_prev
+            padding_zero = torch.zeros_like(v)
+            self.memory.write(w_ret, torch.cat([padding_zero, v], dim=-1))
+            w_wr = self.memory.write_least_used(torch.cat((v, padding_zero), dim=-1))
+            ws.append((w_ret, w_wr))
+        return ws
+
+
+class RLMEMAppending(nn.Module):
+    """`RL-MEM` in MERLIN (MERLIN w/o variational loss)
+
+        -value-based memory
+        -simplified reading
+        -appending-based write
+    """
+    def __init__(
+        self,
+        ):
         pass
 
     def forward(self):
         pass
-
 
 class DNC(nn.Module):
     """DNC:

@@ -20,7 +20,7 @@ class DND(nn.Module):
         pass
 
 
-class MRA(nn.Module):
+class MRA(DND):
     """MRA:
 
         -similar to DND but with some changes on memory content
@@ -28,4 +28,4 @@ class MRA(nn.Module):
     def __init__(self):
         pass
     def forward(self):
-        pass   
+        pass

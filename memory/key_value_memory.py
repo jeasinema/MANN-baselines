@@ -12,15 +12,15 @@ class KeyValueMemory(ValueMemory):
     """ValueMemory with:
 
         -K-V arch
-        used by [so far I don't know]    
+        used by [so far I don't know]
     """
     def __init__(self, mem_size, key_size, value_size, jumpy_bp):
         self.key_size = key_size
         # Key mem create and init
         if jumpy_bp:
-            self.register_buffer('memory_key', torch.FloatTensor(self.B, self.mem_size, self.key_size))
+            self.register_buffer('memory_key', torch.FloatTensor(self.batch_size, self.mem_size, self.key_size))
         else:
-            self.register_parameter('memory_key', nn.Parameter(torch.FloatTensor(self.B, self.mem_size, self.key_size)))
+            self.register_parameter('memory_key', nn.Parameter(torch.FloatTensor(self.batch_size, self.mem_size, self.key_size)))
         stdev = 1 / (np.sqrt(self.mem_size + self.key_size))
         nn.init.uniform_(self.memory_key, -stdev, stdev)
 
@@ -33,7 +33,7 @@ class KeyValueMemory(ValueMemory):
     @property
     def shape(self, with_batch_dim=False):
         if with_batch_dim:
-            return self.B, self.mem_size, self.key_size, self.value_size
+            return self.batch_size, self.mem_size, self.key_size, self.value_size
         else:
             return self.mem_size, self.key_size, self.value_size
 
@@ -51,12 +51,12 @@ class KeyValueMemory(ValueMemory):
         :param k: shape (B, self.key_size)
         """
         B = k.size(0)
-        sim = F.cosine_similarity(self.memory_key[:B] + LOG_EPS, k.unsqueeze(1) + LOG_EPS, dim=-1)           
+        sim = F.cosine_similarity(self.memory_key[:B] + LOG_EPS, k.unsqueeze(1) + LOG_EPS, dim=-1)
         if topk != -1:
             # Zero-out the non-topk
             ind = torch.topk(sim, self.mem_size - topk, dim=-1, largest=False)[1]
             sim.scatter_(1, ind, 0)
-        return sim        
+        return sim
 
     def write(self, w, k, v):
         """
@@ -89,11 +89,11 @@ class DNDMemory(KeyValueMemory):
         del self.memory_key
         torch.cuda.empty_cache()
         if self.jumpy_bp:
-            self.register_buffer('memory', torch.FloatTensor(self.B, self.init_mem_size, self.value_size))
-            self.register_buffer('memory_key', torch.FloatTensor(self.B, self.init_mem_size, self.key_size))
+            self.register_buffer('memory', torch.FloatTensor(self.batch_size, self.init_mem_size, self.value_size))
+            self.register_buffer('memory_key', torch.FloatTensor(self.batch_size, self.init_mem_size, self.key_size))
         else:
-            self.register_parameter('memory', nn.Parameter(torch.FloatTensor(self.B, self.init_mem_size, self.value_size)))
-            self.register_parameter('memory_key', nn.Parameter(torch.FloatTensor(self.B, self.init_mem_size, self.key_size)))
+            self.register_parameter('memory', nn.Parameter(torch.FloatTensor(self.batch_size, self.init_mem_size, self.value_size)))
+            self.register_parameter('memory_key', nn.Parameter(torch.FloatTensor(self.batch_size, self.init_mem_size, self.key_size)))
         stdev = 1 / (np.sqrt(self.init_mem_size + self.value_size))
         stdev_key = 1 / (np.sqrt(self.init_mem_size + self.key_size))
         nn.init.uniform_(self.memory, -stdev, stdev)
@@ -112,8 +112,8 @@ class DNDMemory(KeyValueMemory):
             self.mem_size += 1
             self.memory.resize_(self.batch_size, self.mem_size, self.value_size)
             self.memory_key.resize_(self.batch_size, self.mem_size, self.key_size)
-            self.memory[:B, -1, :] = v 
-            self.memory_key[:B, -1, :] = k 
+            self.memory[:B, -1, :] = v
+            self.memory_key[:B, -1, :] = k
         else:
             self.memory[:B, self.used_mem-1, :] = v
             self.memory_key[:B, self.used_mem-1, :] = k
@@ -121,9 +121,9 @@ class DNDMemory(KeyValueMemory):
 
 class MRAMemory(DNDMemory):
     """DNDMemory with:
-    
+
         -L2+topk based similarity (TODO:jxma)
         used by MRA
     """
     def similarity(self, k, topk=-1):
-        super().similarity(k, topk)
+        super(MRAMemory, self).similarity(k, topk)
