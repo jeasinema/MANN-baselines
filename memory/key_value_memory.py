@@ -14,28 +14,22 @@ class KeyValueMemory(ValueMemory):
         -K-V arch
         used by [so far I don't know]
     """
-    def __init__(self, mem_size, key_size, value_size, jumpy_bp):
+    def __init__(self, mem_size, value_size, batch_size, key_size):
         self.key_size = key_size
         # Key mem create and init
-        if jumpy_bp:
-            self.register_buffer('memory_key', torch.FloatTensor(self.batch_size, self.mem_size, self.key_size))
-        else:
-            self.register_parameter('memory_key', nn.Parameter(torch.FloatTensor(self.batch_size, self.mem_size, self.key_size)))
-        stdev = 1 / (np.sqrt(self.mem_size + self.key_size))
-        nn.init.uniform_(self.memory_key, -stdev, stdev)
-
+        self.register_buffer('memory_key', torch.FloatTensor(self.batch_size, self.mem_size, self.key_size))
         super(KeyValueMemory, self).__init__(
             mem_size,
             value_size,
-            jumpy_bp
+            batch_size,
         )
 
     @property
     def shape(self, with_batch_dim=False):
         if with_batch_dim:
-            return self.batch_size, self.mem_size, self.key_size, self.value_size
+            return self.batch_size, self.mem_size, self.value_size, self.key_size
         else:
-            return self.mem_size, self.key_size, self.value_size
+            return self.mem_size, self.value_size, self.key_size
 
     def reset(self):
         stdev = 1 / (np.sqrt(self.mem_size + self.key_size))
@@ -77,10 +71,10 @@ class DNDMemory(KeyValueMemory):
         -appending-based write
         used by DND, Memory Networks
     """
-    def __init__(self, init_mem_size, key_size, value_size, batch_size, jumpy_bp=True):
+    def __init__(self, init_mem_size, value_size, batch_size, key_size):
         self.init_mem_size = init_mem_size
         self.used_mem = 0
-        super(DNDMemory, self).__init__(init_mem_size, key_size, value_size, batch_size, jumpy_bp)
+        super(DNDMemory, self).__init__(init_mem_size, key_size, value_size, batch_size)
 
     def reset(self):
         self.mem_size = self.init_mem_size
@@ -88,12 +82,8 @@ class DNDMemory(KeyValueMemory):
         del self.memory
         del self.memory_key
         torch.cuda.empty_cache()
-        if self.jumpy_bp:
-            self.register_buffer('memory', torch.FloatTensor(self.batch_size, self.init_mem_size, self.value_size))
-            self.register_buffer('memory_key', torch.FloatTensor(self.batch_size, self.init_mem_size, self.key_size))
-        else:
-            self.register_parameter('memory', nn.Parameter(torch.FloatTensor(self.batch_size, self.init_mem_size, self.value_size)))
-            self.register_parameter('memory_key', nn.Parameter(torch.FloatTensor(self.batch_size, self.init_mem_size, self.key_size)))
+        self.register_buffer('memory', torch.FloatTensor(self.batch_size, self.init_mem_size, self.value_size))
+        self.register_buffer('memory_key', torch.FloatTensor(self.batch_size, self.init_mem_size, self.key_size))
         stdev = 1 / (np.sqrt(self.init_mem_size + self.value_size))
         stdev_key = 1 / (np.sqrt(self.init_mem_size + self.key_size))
         nn.init.uniform_(self.memory, -stdev, stdev)

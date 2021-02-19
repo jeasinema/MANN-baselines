@@ -1,3 +1,6 @@
+"""
+A collection of MANNs with value-based memory and addressing-based r/w.
+"""
 import numpy as np
 
 import torch
@@ -503,20 +506,17 @@ class RLMEM(SimpleNTM):
         return ws
 
 
-class RLMEMAppending(nn.Module):
-    """`RL-MEM` in MERLIN (MERLIN w/o variational loss)
+class MANNMeta(SimpleNTM):
+    """Meta-Learning with Memory-Augmented Neural Networks
+    http://proceedings.mlr.press/v48/santoro16.pdf
 
-        -value-based memory
-        -simplified reading
-        -appending-based write
+    https://github.com/Leputa/MANN-meta-learning
     """
-    def __init__(
-        self,
-        ):
+    def __init__(self):
         pass
-
     def forward(self):
         pass
+
 
 class DNC(nn.Module):
     """DNC:

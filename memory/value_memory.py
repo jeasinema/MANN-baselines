@@ -13,17 +13,14 @@ class ValueMemory(nn.Module):
         used by MANN(http://proceedings.mlr.press/v48/santoro16.pdf)
     """
 
-    def __init__(self, mem_size, value_size, batch_size, jumpy_bp=True):
+    def __init__(self, mem_size, value_size, batch_size):
         super(ValueMemory, self).__init__()
         self.mem_size = mem_size
         self.value_size = value_size
         self.batch_size = batch_size
 
         # Mem create and init
-        if jumpy_bp:
-            self.register_buffer('memory', torch.FloatTensor(self.batch_size, self.mem_size, self.value_size))
-        else:
-            self.register_parameter('memory', nn.Parameter(torch.FloatTensor(self.batch_size, self.mem_size, self.value_size)))
+        self.register_buffer('memory', torch.FloatTensor(self.batch_size, self.mem_size, self.value_size))
 
         self.reset()
 
@@ -90,69 +87,56 @@ class NTMMemory(ValueMemory):
         self.memory[:B] = self.memory[:B] * (1 - write_del_v) + write_add_v
 
 
-class MERLINMemory(ValueMemory):
+class AppendingMemory(ValueMemory):
     """ValueMemory with:
 
-        -usage counting (for overwritting)
-        used by RLMEM, MERLIN
+        -appending-based write
+        -overwrite the least recently added entry
     """
     def __init__(self, *args, **kwargs):
-        super(MERLINMemory, self).__init__(*args, **kwargs)
+        super(AppendingMemory, self).__init__(*args, **kwargs)
+        self.gamma = 0.9
         self.register_buffer('mem_usage', torch.FloatTensor(self.batch_size, self.mem_size).fill_(0))
 
+    def write_least_used(self, v):
+        """
+        :param v: shape (B, self.value_size)
+
+        :output: weight for least-used overwriting shape (B, self.mem_size)
+        """
+        B = v.size(0)
+        ind = torch.topk(self.mem_usage[:B], 1, -1, largest=False)[1]
+        w = torch.zeros(B, self.mem_size).to(v)
+        w.scatter_(1, ind, 1)
+        self.write(w, v)
+        self.mem_usage[:B] *= self.gamma
+        self.mem_usage[:B] += w
+        return w
+
+
+class MERLINMemory(AppendingMemory):
+    """AppendingMemory with:
+
+        -usage counting during reading (for overwritting)
+        used by RLMEM, MERLIN
+    """
     def read(self, w):
         B = w.size(0)
         self.mem_usage[:B] += w
         return super(MERLINMemory, self).read(w)
 
-    def write_least_used(self, x):
+    def write_least_used(self, v):
         """
         :output: weight for least-used overwriting shape (B, self.mem_size)
-        """
-        B = x.size(0)
-        ind = torch.topk(self.mem_usage[:B], 1, -1, largest=False)[1]
-        w = torch.zeros(B, self.mem_size).to(x)
-        w.scatter_(1, ind, 1)
-        self.write(w, x)
-        return w
-
-
-class AppendingMemory(ValueMemory):
-    """ValueMemory with:
-
-        -appending-based write
-    """
-    def __init__(self, init_mem_size, value_size, batch_size, jumpy_bp=True):
-        self.init_mem_size = init_mem_size
-        self.used_mem = 0
-        super(AppendingMemory, self).__init__(init_mem_size, value_size, batch_size, jumpy_bp)
-
-    def reset(self):
-        self.mem_size = self.init_mem_size
-        # Free CPU/GPU memory
-        del self.memory
-        torch.cuda.empty_cache()
-        if self.jumpy_bp:
-            self.register_buffer('memory', torch.FloatTensor(self.batch_size, self.init_mem_size, self.value_size))
-        else:
-            self.register_parameter('memory', nn.Parameter(torch.FloatTensor(self.batch_size, self.init_mem_size, self.value_size)))
-        stdev = 1 / (np.sqrt(self.init_mem_size + self.value_size))
-        nn.init.uniform_(self.memory, -stdev, stdev)
-
-    def write(self, v):
-        """
-        TODO (jxma): better re-allocation strategy
 
         :param v: shape (B, self.value_size)
         """
         B = v.size(0)
-        self.used_mem += 1
-        if self.used_mem > self.mem_size:
-            self.mem_size += 1
-            self.memory.resize_(self.batch_size, self.mem_size, self.value_size)
-            self.memory[:B, -1, :] = v
-        else:
-            self.memory[:B, self.used_mem-1, :] = v
+        ind = torch.topk(self.mem_usage[:B], 1, -1, largest=False)[1]
+        w = torch.zeros(B, self.mem_size).to(v)
+        w.scatter_(1, ind, 1)
+        self.write(w, v)
+        return w
 
 
 class DNCMemory(NTMMemory):
