@@ -1,3 +1,7 @@
+"""
+A collection of value-based memory.
+Note: all memories must be reset before use.
+"""
 import numpy as np
 
 import torch
@@ -21,8 +25,6 @@ class ValueMemory(nn.Module):
 
         # Mem create and init
         self.register_buffer('memory', torch.FloatTensor(self.batch_size, self.mem_size, self.value_size))
-
-        self.reset()
 
     @property
     def shape(self, with_batch_dim=False):
@@ -91,18 +93,38 @@ class AppendingMemory(ValueMemory):
     """ValueMemory with:
 
         -appending-based write
-        -overwrite the least recently added entry
+        -overwrite the least recently r/w entry
     """
     def __init__(self, *args, **kwargs):
         super(AppendingMemory, self).__init__(*args, **kwargs)
         self.gamma = 0.9
         self.register_buffer('mem_usage', torch.FloatTensor(self.batch_size, self.mem_size).fill_(0))
 
+    def read(self, w):
+        """
+        :output read value: shape (B, self.value_size)
+
+        :param w: shape (B, self.mem_size)
+        """
+        B = w.size(0)
+        self.mem_usage[:B] *= self.gamma
+        self.mem_usage[:B] += w
+        return super(AppendingMemory, self).read(w)
+
+    def write(self, w, v):
+        """
+        :param w: shape (B, self.mem_size)
+        :param v: shape (B, self.value_size)
+        """
+        B = w.size(0)
+        write_v = torch.matmul(w.unsqueeze(-1), v.unsqueeze(1))
+        self.memory[:B] = write_v
+
     def write_least_used(self, v):
         """
-        :param v: shape (B, self.value_size)
-
         :output: weight for least-used overwriting shape (B, self.mem_size)
+
+        :param v: shape (B, self.value_size)
         """
         B = v.size(0)
         ind = torch.topk(self.mem_usage[:B], 1, -1, largest=False)[1]
@@ -119,8 +141,16 @@ class MERLINMemory(AppendingMemory):
 
         -usage counting during reading (for overwritting)
         used by RLMEM, MERLIN
+
+        Note: we use replace-based write here, which is slightly different from
+            the original paper(https://arxiv.org/pdf/1803.10760.pdf).
     """
     def read(self, w):
+        """
+        :output read value: shape (B, self.value_size)
+
+        :param w: shape (B, self.mem_size)
+        """
         B = w.size(0)
         self.mem_usage[:B] += w
         return super(MERLINMemory, self).read(w)

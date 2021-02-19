@@ -1,3 +1,7 @@
+"""
+A collection of key-value-based memory.
+Note: all memories must be reset before use.
+"""
 import numpy as np
 
 import torch
@@ -15,14 +19,13 @@ class KeyValueMemory(ValueMemory):
         used by [so far I don't know]
     """
     def __init__(self, mem_size, value_size, batch_size, key_size):
-        self.key_size = key_size
-        # Key mem create and init
-        self.register_buffer('memory_key', torch.FloatTensor(self.batch_size, self.mem_size, self.key_size))
         super(KeyValueMemory, self).__init__(
             mem_size,
             value_size,
             batch_size,
         )
+        self.key_size = key_size
+        self.register_buffer('memory_key', torch.FloatTensor(batch_size, mem_size, key_size))
 
     @property
     def shape(self, with_batch_dim=False):
@@ -34,7 +37,7 @@ class KeyValueMemory(ValueMemory):
     def reset(self):
         stdev = 1 / (np.sqrt(self.mem_size + self.key_size))
         nn.init.uniform_(self.memory_key, -stdev, stdev)
-        super().reset()
+        super(KeyValueMemory, self).reset()
 
     def similarity(self, k, topk=-1):
         """
@@ -69,44 +72,47 @@ class DNDMemory(KeyValueMemory):
     """KeyValueMemory with:
 
         -appending-based write
+        -overwrite the least recently r/w entry
         used by DND, Memory Networks
     """
-    def __init__(self, init_mem_size, value_size, batch_size, key_size):
-        self.init_mem_size = init_mem_size
-        self.used_mem = 0
-        super(DNDMemory, self).__init__(init_mem_size, key_size, value_size, batch_size)
+    def __init__(self, *args, **kwargs):
+        super(DNDMemory, self).__init__(*args, **kwargs)
+        self.gamma = 0.9
+        self.register_buffer('mem_usage', torch.FloatTensor(self.batch_size, self.mem_size).fill_(0))
 
-    def reset(self):
-        self.mem_size = self.init_mem_size
-        # Free CPU/GPU memory
-        del self.memory
-        del self.memory_key
-        torch.cuda.empty_cache()
-        self.register_buffer('memory', torch.FloatTensor(self.batch_size, self.init_mem_size, self.value_size))
-        self.register_buffer('memory_key', torch.FloatTensor(self.batch_size, self.init_mem_size, self.key_size))
-        stdev = 1 / (np.sqrt(self.init_mem_size + self.value_size))
-        stdev_key = 1 / (np.sqrt(self.init_mem_size + self.key_size))
-        nn.init.uniform_(self.memory, -stdev, stdev)
-        nn.init.uniform_(self.memory_key, -stdev_key, stdev_key)
+    def read(self, w):
+        B = w.size(0)
+        self.mem_usage[:B] *= self.gamma
+        self.mem_usage[:B] += w
+        return super(DNDMemory, self).read(w)
 
-    def write(self, k, v):
+    def write(self, w, k, v):
         """
-        TODO (jxma): better re-allocation strategy
+        :param w: shape (B, self.mem_size)
+        :param k: shape (B, self.key_size)
+        :param v: shape (B, self.value_size)
+        """
+        B = w.size(0)
+        write_k = torch.matmul(w.unsqueeze(-1), k.unsqueeze(1))
+        write_v = torch.matmul(w.unsqueeze(-1), v.unsqueeze(1))
+        self.memory_key[:B] = write_k
+        self.memory[:B] = write_v
+
+    def write_least_used(self, k, v):
+        """
+        :output: weight for least-used overwriting shape (B, self.mem_size)
 
         :param k: shape (B, self.key_size)
         :param v: shape (B, self.value_size)
         """
         B = k.size(0)
-        self.used_mem += 1
-        if self.used_mem > self.mem_size:
-            self.mem_size += 1
-            self.memory.resize_(self.batch_size, self.mem_size, self.value_size)
-            self.memory_key.resize_(self.batch_size, self.mem_size, self.key_size)
-            self.memory[:B, -1, :] = v
-            self.memory_key[:B, -1, :] = k
-        else:
-            self.memory[:B, self.used_mem-1, :] = v
-            self.memory_key[:B, self.used_mem-1, :] = k
+        ind = torch.topk(self.mem_usage[:B], 1, -1, largest=False)[1]
+        w = torch.zeros(B, self.mem_size).to(k)
+        w.scatter_(1, ind, 1)
+        self.write(w, k, v)
+        self.mem_usage[:B] *= self.gamma
+        self.mem_usage[:B] += w
+        return w
 
 
 class MRAMemory(DNDMemory):

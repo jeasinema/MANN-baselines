@@ -44,8 +44,8 @@ class SimpleNTM(nn.Module):
         self.model_output_size = model_output_size
         self.batch_sizeatch_size = batch_size
 
-        mem_extra_args = mem_extra_args if mem_extra_args else []
-        self.memory = mem_class(mem_size, mem_value_size, batch_size, *mem_extra_args)
+        mem_extra_args = mem_extra_args if mem_extra_args else {}
+        self.memory = mem_class(mem_size, mem_value_size, batch_size, **mem_extra_args)
 
         self.controller_type = controller
         controller_hidden_units = controller_hidden_units if controller_hidden_units else []
@@ -94,7 +94,7 @@ class SimpleNTM(nn.Module):
             self.model_output_size
         )
 
-        self.reset(reset_memory=False)
+        self.reset(reset_memory=True)
 
     def reset(self, reset_memory=True):
         if reset_memory:
@@ -154,7 +154,7 @@ class SimpleNTM(nn.Module):
         ]
         return init_controller_state, init_reads, init_rwhead_state
 
-    def _address(self, k):
+    def _address(self, k, topk=-1):
         """NTM Addressing (according to section 3.3).
         :output weight: shape (B, self.memory.mem_size)
 
@@ -164,7 +164,7 @@ class SimpleNTM(nn.Module):
         k = k.clone()
 
         # Content focus
-        sim = self.memory.similarity(k)
+        sim = self.memory.similarity(k, topk=topk)
         w = F.softmax(sim, dim=1)
 
         return w
