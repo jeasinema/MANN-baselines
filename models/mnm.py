@@ -6,7 +6,7 @@ import torch.nn.functional as F
 
 from memory import *
 
-class NMN(nn.Module):
+class MNM(nn.Module):
     def __init__(self):
         pass
     def forward(self):

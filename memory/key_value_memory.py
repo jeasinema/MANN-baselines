@@ -56,13 +56,24 @@ class KeyValueMemory(ValueMemory):
             sim.scatter_(1, ind, 0)
         return sim
 
-    def write(self, w, k, v):
+    def clear(self, w):
+        """
+        :param w: shape (B, self.mem_size) should be mulit-hot tensor (0 or 1)
+        """
+        assert ((w == 0) + (w == 1)).all()
+        B = w.size(0)
+        self.memory[:B] *= w.unsqueeze(-1)
+        self.memory_key[:B] *= w.unsqueeze(-1)
+
+    def write(self, w, k, v, clear_before_write=False):
         """
         :param w: shape (B, self.mem_size)
         :param k: shape (B, self.key_size)
         :param v: shape (B, self.value_size)
         """
         B = w.size(0)
+        if clear_before_write:
+            self.clear(w)
         write_k = torch.matmul(w.unsqueeze(-1), k.unsqueeze(1))
         write_v = torch.matmul(w.unsqueeze(-1), v.unsqueeze(1))
         self.memory_key[:B] = self.memory_key[:B] + write_k
@@ -87,17 +98,19 @@ class DNDMemory(KeyValueMemory):
         self.mem_usage[:B] += w
         return super(DNDMemory, self).read(w)
 
-    def write(self, w, k, v):
+    def write(self, w, k, v, clear_before_write=False):
         """
         :param w: shape (B, self.mem_size)
         :param k: shape (B, self.key_size)
         :param v: shape (B, self.value_size)
         """
         B = w.size(0)
+        if clear_before_write:
+            self.clear(w)
         write_k = torch.matmul(w.unsqueeze(-1), k.unsqueeze(1))
         write_v = torch.matmul(w.unsqueeze(-1), v.unsqueeze(1))
-        self.memory_key[:B] = write_k
-        self.memory[:B] = write_v
+        self.memory_key[:B] += write_k
+        self.memory[:B] += write_v
         self.mem_usage[:B] *= self.gamma
         self.mem_usage[:B] += w
 
@@ -112,7 +125,7 @@ class DNDMemory(KeyValueMemory):
         ind = torch.topk(self.mem_usage[:B], 1, -1, largest=False)[1]
         w = torch.zeros(B, self.mem_size).to(k)
         w.scatter_(1, ind, 1)
-        self.write(w, k, v)
+        self.write(w, k, v, clear_before_write=True)
         return w
 
 

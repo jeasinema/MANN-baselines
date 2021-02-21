@@ -53,14 +53,24 @@ class ValueMemory(nn.Module):
             sim.scatter_(1, ind, 0)
         return sim
 
-    def write(self, w, v):
+    def clear(self, w):
+        """
+        :param w: shape (B, self.mem_size) should be mulit-hot tensor (0 or 1)
+        """
+        assert ((w == 0) + (w == 1)).all()
+        B = w.size(0)
+        self.memory[:B] *= w.unsqueeze(-1)
+
+    def write(self, w, v, clear_before_write=False):
         """
         :param w: shape (B, self.mem_size)
         :param v: shape (B, self.value_size)
         """
         B = w.size(0)
+        if clear_before_write:
+            self.clear(w)
         write_v = torch.matmul(w.unsqueeze(-1), v.unsqueeze(1))
-        self.memory[:B] = self.memory[:B] + write_v
+        self.memory[:B] += write_v
 
     def read(self, w):
         """
@@ -112,16 +122,15 @@ class AppendingMemory(ValueMemory):
         self.mem_usage[:B] += w
         return super(AppendingMemory, self).read(w)
 
-    def write(self, w, v):
+    def write(self, w, v, clear_before_write=False):
         """
         :param w: shape (B, self.mem_size)
         :param v: shape (B, self.value_size)
         """
         B = w.size(0)
-        write_v = torch.matmul(w.unsqueeze(-1), v.unsqueeze(1))
-        self.memory[:B] = write_v
         self.mem_usage[:B] *= self.gamma
         self.mem_usage[:B] += w
+        super(AppendingMemory, self).write(w, v, clear_before_write=clear_before_write)
 
     def write_least_used(self, v):
         """
@@ -133,12 +142,12 @@ class AppendingMemory(ValueMemory):
         ind = torch.topk(self.mem_usage[:B], 1, -1, largest=False)[1]
         w = torch.zeros(B, self.mem_size).to(v)
         w.scatter_(1, ind, 1)
-        self.write(w, v)
+        self.write(w, v, clear_before_write=True)
         return w
 
 
-class MERLINMemory(AppendingMemory):
-    """AppendingMemory with:
+class MERLINMemory(ValueMemory):
+    """ValueMemory with:
 
         -usage counting during reading (for overwritting)
         used by RLMEM, MERLIN
@@ -146,6 +155,10 @@ class MERLINMemory(AppendingMemory):
         Note: we use replace-based write here, which is slightly different from
             the original paper(https://arxiv.org/pdf/1803.10760.pdf).
     """
+    def __init__(self, *args, **kwargs):
+        super(MERLINMemory, self).__init__(*args, **kwargs)
+        self.register_buffer('mem_usage', torch.FloatTensor(self.batch_size, self.mem_size).fill_(0))
+
     def read(self, w):
         """
         :output read value: shape (B, self.value_size)
@@ -156,14 +169,18 @@ class MERLINMemory(AppendingMemory):
         self.mem_usage[:B] += w
         return super(MERLINMemory, self).read(w)
 
-    def write(self, w, v):
+    def write_least_used(self, v):
         """
-        :param w: shape (B, self.mem_size)
+        :output: weight for least-used overwriting shape (B, self.mem_size)
+
         :param v: shape (B, self.value_size)
         """
-        B = w.size(0)
-        write_v = torch.matmul(w.unsqueeze(-1), v.unsqueeze(1))
-        self.memory[:B] = write_v
+        B = v.size(0)
+        ind = torch.topk(self.mem_usage[:B], 1, -1, largest=False)[1]
+        w = torch.zeros(B, self.mem_size).to(v)
+        w.scatter_(1, ind, 1)
+        self.write(w, v, clear_before_write=True)
+        return w
 
 
 class DNCMemory(NTMMemory):
