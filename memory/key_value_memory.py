@@ -58,6 +58,7 @@ class KeyValueMemory(ValueMemory):
 
     def clear(self, w):
         """
+        TODO: how can we make the cleared item detached from the previous comp graph?
         :param w: shape (B, self.mem_size) should be mulit-hot tensor (0 or 1)
         """
         assert ((w == 0) + (w == 1)).all()
