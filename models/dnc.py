@@ -60,6 +60,7 @@ class SimpleNTM(nn.Module):
                 last_dim = nh
             self.controller.append(nn.Linear(last_dim, controller_output_size))
             self.controller = nn.Sequential(*self.controller)
+            self.register_parameter('init_mlp_o', nn.Parameter(torch.FloatTensor(1, self.controller_output_size).fill_(0)))
         elif controller == 'lstm':
             assert self.controller_num_layer == 1
             if self.controller_num_layer > 1:
@@ -126,7 +127,8 @@ class SimpleNTM(nn.Module):
     def init_state(self, batch_size=-1):
         """
         :output controller latent state:
-            shape (B, self.controller_num_layer, self.controller_output_size)
+            shape (self.controller_num_layer, B, self.controller_output_size) -- LSTM
+                  (B, self.controller_output_size) -- MLP
                 required by controller
         :output init read values:
             shape list of (B, self.memory.value_size), length == len(self.read_heads)
@@ -138,13 +140,13 @@ class SimpleNTM(nn.Module):
         B = batch_size if batch_size else self.batch_size
         if self.controller_type == 'lstm':
             init_controller_state = (
-                self.init_lstm_h.clone().repeat(1, B, 1),
-                self.init_lstm_c.clone().repeat(1, B, 1),
+                self.init_lstm_h.detach().repeat(1, B, 1),
+                self.init_lstm_c.detach().repeat(1, B, 1),
             )
         else:
-            init_controller_state = None
+            init_controller_state = self.init_mlp_o.detach().repeat(B, 1)
         init_reads = [
-            self.init_read.clone().repeat(B, 1)
+            self.init_read.detach().repeat(B, 1)
             for _ in self.read_heads
         ]
         # TODO: zero vs. rand init
@@ -160,9 +162,6 @@ class SimpleNTM(nn.Module):
 
         :param k: shape (B, .) The key vector.
         """
-        # Handle Activations
-        k = k.clone()
-
         # Content focus
         sim = self.memory.similarity(k, topk=topk)
         w = F.softmax(sim, dim=1)
@@ -208,7 +207,8 @@ class SimpleNTM(nn.Module):
         :output ntm output: shape (B, self.model_output_size)
         :output current latent state:
             tuple(
-                shape (B, self.controller_num_layer, self.controller_output_size)
+                shape (self.controller_num_layer, B, self.controller_output_size) -- LSTM
+                      (B, self.controller_output_size) -- MLP
                     -- controller latent state, required by controller
                 shape list of (B, self.memory.value_size), length == len(self.read_heads)
                     -- init read, required by controller
@@ -248,7 +248,8 @@ class SimpleNTM(nn.Module):
         :output ntm output: shape (T, B, self.model_output_size)
         :output current latent state:
             tuple(
-                shape (B, self.controller_num_layer, self.controller_output_size)
+                shape (self.controller_num_layer, B, self.controller_output_size) -- LSTM
+                      (B, self.controller_output_size) -- MLP
                     -- controller latent state, required by controller
                 shape list of (B, self.memory.value_size), length == len(self.read_heads)
                     -- init read, required by controller
@@ -332,7 +333,6 @@ class NTM(SimpleNTM):
         :param w_prev: shape (B, self.memory.mem_size) The weight produced in the previous time step.
         """
         # Handle Activations
-        k = k.clone()
         β = F.softplus(β)
         g = torch.sigmoid(g)
         s = F.softmax(s, dim=1)
@@ -455,7 +455,6 @@ class RLMEM(SimpleNTM):
         :param β: shape (B, .) The key strength (focus).
         """
         # Handle Activations
-        k = k.clone()
         β = F.softplus(β)
 
         # Content focus

@@ -39,6 +39,7 @@ class ValueMemory(nn.Module):
 
     def similarity(self, v, topk=-1):
         """
+        TODO: topk + sparse matrix product
         :output similarity: shape (B, self.mem_size)
         The output should be treated unnormalized.
 
@@ -119,6 +120,8 @@ class AppendingMemory(ValueMemory):
         B = w.size(0)
         write_v = torch.matmul(w.unsqueeze(-1), v.unsqueeze(1))
         self.memory[:B] = write_v
+        self.mem_usage[:B] *= self.gamma
+        self.mem_usage[:B] += w
 
     def write_least_used(self, v):
         """
@@ -131,8 +134,6 @@ class AppendingMemory(ValueMemory):
         w = torch.zeros(B, self.mem_size).to(v)
         w.scatter_(1, ind, 1)
         self.write(w, v)
-        self.mem_usage[:B] *= self.gamma
-        self.mem_usage[:B] += w
         return w
 
 
@@ -155,18 +156,14 @@ class MERLINMemory(AppendingMemory):
         self.mem_usage[:B] += w
         return super(MERLINMemory, self).read(w)
 
-    def write_least_used(self, v):
+    def write(self, w, v):
         """
-        :output: weight for least-used overwriting shape (B, self.mem_size)
-
+        :param w: shape (B, self.mem_size)
         :param v: shape (B, self.value_size)
         """
-        B = v.size(0)
-        ind = torch.topk(self.mem_usage[:B], 1, -1, largest=False)[1]
-        w = torch.zeros(B, self.mem_size).to(v)
-        w.scatter_(1, ind, 1)
-        self.write(w, v)
-        return w
+        B = w.size(0)
+        write_v = torch.matmul(w.unsqueeze(-1), v.unsqueeze(1))
+        self.memory[:B] = write_v
 
 
 class DNCMemory(NTMMemory):

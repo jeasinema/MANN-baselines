@@ -41,6 +41,7 @@ class KeyValueMemory(ValueMemory):
 
     def similarity(self, k, topk=-1):
         """
+        TODO: topk + sparse matrix product
         :output similarity: shape (B, self.mem_size)
 
         The output should be treated unnormalized.
@@ -97,6 +98,8 @@ class DNDMemory(KeyValueMemory):
         write_v = torch.matmul(w.unsqueeze(-1), v.unsqueeze(1))
         self.memory_key[:B] = write_k
         self.memory[:B] = write_v
+        self.mem_usage[:B] *= self.gamma
+        self.mem_usage[:B] += w
 
     def write_least_used(self, k, v):
         """
@@ -110,16 +113,24 @@ class DNDMemory(KeyValueMemory):
         w = torch.zeros(B, self.mem_size).to(k)
         w.scatter_(1, ind, 1)
         self.write(w, k, v)
-        self.mem_usage[:B] *= self.gamma
-        self.mem_usage[:B] += w
         return w
 
 
 class MRAMemory(DNDMemory):
     """DNDMemory with:
 
+        -overwrite with least write only
         -L2+topk based similarity (TODO:jxma)
         used by MRA
     """
     def similarity(self, k, topk=-1):
-        super(MRAMemory, self).similarity(k, topk)
+        return super(MRAMemory, self).similarity(k, topk)
+
+    def read(self, w):
+        """
+        :output read value: shape (B, self.value_size)
+
+        :param w: shape (B, self.mem_size)
+        """
+        B = w.size(0)
+        return torch.matmul(w.unsqueeze(1), self.memory[:B]).squeeze(1)

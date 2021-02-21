@@ -17,3 +17,4 @@ With application in:
 - [ ] Variational addressing
 - [ ] EBMM
 - [ ] General dataset interface
+- [ ] Detailed r/w strategies
