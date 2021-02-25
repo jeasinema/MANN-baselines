@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from memory import *
-from models import SimpleNTMAppending
+from models import SimpleNTM
 
 
 class SimpleNTMAppending(SimpleNTM):
