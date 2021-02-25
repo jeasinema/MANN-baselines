@@ -1,8 +1,6 @@
 import os
 import glob
 import numpy as np
-from scipy import misc
-import cv2
 
 from PIL import Image
 import torch
@@ -21,7 +19,7 @@ class RAVENdataset(Dataset):
         self.file_names = [f for f in glob.glob(os.path.join(root_dir, "*", "*.npz")) \
                             if dataset_type in f]
         self.img_size = img_size
-        self.embeddings = np.load(os.path.join(root_dir, 'embedding.npy'), allow_pickle=True, encoding='latin1')
+        # self.embeddings = np.load(os.path.join(root_dir, 'embedding.npy'), allow_pickle=True, encoding='latin1')
         self.shuffle = shuffle
 
     def __len__(self):
@@ -55,13 +53,13 @@ class RAVENdataset(Dataset):
 
         embedding = torch.zeros((6, 300), dtype=torch.float)
         indicator = torch.zeros(1, dtype=torch.float)
-        element_idx = 0
-        for element in structure:
-            if element != '/':
-                embedding[element_idx, :] = torch.tensor(self.embeddings.item().get(element), dtype=torch.float)
-                element_idx += 1
-        if element_idx == 6:
-            indicator[0] = 1.
+        # element_idx = 0
+        # for element in structure:
+        #     if element != '/':
+        #         embedding[element_idx, :] = torch.tensor(self.embeddings.item().get(element), dtype=torch.float)
+        #         element_idx += 1
+        # if element_idx == 6:
+        #     indicator[0] = 1.
         # if meta_target.dtype == np.int8:
         #     meta_target = meta_target.astype(np.uint8)
         # if meta_structure.dtype == np.int8:
