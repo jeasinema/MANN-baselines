@@ -42,6 +42,7 @@ args.cuda = torch.cuda.is_available()
 torch.cuda.set_device(args.device)
 if args.cuda:
     torch.cuda.manual_seed(args.seed)
+torch.autograd.set_detect_anomaly(True)
 
 if not os.path.exists(args.save):
     os.makedirs(args.save)

@@ -60,7 +60,7 @@ class ValueMemory(nn.Module):
         """
         assert ((w == 0) + (w == 1)).all()
         B = w.size(0)
-        self.memory[:B] *= w.unsqueeze(-1)
+        self.memory[:B] = self.memory[:B] * w.unsqueeze(-1)
 
     def write(self, w, v, clear_before_write=False):
         """
@@ -71,7 +71,7 @@ class ValueMemory(nn.Module):
         if clear_before_write:
             self.clear(w)
         write_v = torch.matmul(w.unsqueeze(-1), v.unsqueeze(1))
-        self.memory[:B] += write_v
+        self.memory[:B] = self.memory[:B] + write_v
 
     def read(self, w):
         """
@@ -120,7 +120,7 @@ class AppendingMemory(ValueMemory):
         """
         B = w.size(0)
         self.mem_usage[:B] *= self.gamma
-        self.mem_usage[:B] += w
+        self.mem_usage[:B] += w.detach()
         return super(AppendingMemory, self).read(w)
 
     def write(self, w, v, clear_before_write=False):
@@ -130,7 +130,7 @@ class AppendingMemory(ValueMemory):
         """
         B = w.size(0)
         self.mem_usage[:B] *= self.gamma
-        self.mem_usage[:B] += w
+        self.mem_usage[:B] += w.detach()
         super(AppendingMemory, self).write(w, v, clear_before_write=clear_before_write)
 
     def write_least_used(self, v):
@@ -167,7 +167,7 @@ class MERLINMemory(ValueMemory):
         :param w: shape (B, self.mem_size)
         """
         B = w.size(0)
-        self.mem_usage[:B] += w
+        self.mem_usage[:B] += w.detach()
         return super(MERLINMemory, self).read(w)
 
     def write_least_used(self, v):
