@@ -1,4 +1,5 @@
 import numpy as np
+import math
 
 import torch
 import torch.nn as nn
@@ -26,34 +27,6 @@ class RAVENBasicModel(nn.Module):
     def compute_loss(self, output, target, meta_target, meta_structure):
         pass
 
-    def train_(self, image, target, meta_target, meta_structure, embedding, indicator):
-        self.optimizer.zero_grad()
-        output = self(image, embedding, indicator)
-        loss = self.compute_loss(output, target, meta_target, meta_structure)
-        loss.backward()
-        self.optimizer.step()
-        pred = output[0].data.max(1)[1]
-        correct = pred.eq(target.data).cpu().sum().numpy()
-        accuracy = correct * 100.0 / target.size()[0]
-        return loss.item(), accuracy
-
-    def validate_(self, image, target, meta_target, meta_structure, embedding, indicator):
-        with torch.no_grad():
-            output = self(image, embedding, indicator)
-        loss = self.compute_loss(output, target, meta_target, meta_structure)
-        pred = output[0].data.max(1)[1]
-        correct = pred.eq(target.data).cpu().sum().numpy()
-        accuracy = correct * 100.0 / target.size()[0]
-        return loss.item(), accuracy
-
-    def test_(self, image, target, meta_target, meta_structure, embedding, indicator):
-        with torch.no_grad():
-            output = self(image, embedding, indicator)
-        pred = output[0].data.max(1)[1]
-        correct = pred.eq(target.data).cpu().sum().numpy()
-        accuracy = correct * 100.0 / target.size()[0]
-        return accuracy
-
 class identity(nn.Module):
     def __init__(self):
         super(identity, self).__init__()
@@ -62,9 +35,9 @@ class identity(nn.Module):
         return x
 
 class mlp_module(nn.Module):
-    def __init__(self):
+    def __init__(self, input_dim=512):
         super(mlp_module, self).__init__()
-        self.fc1 = nn.Linear(512, 512)
+        self.fc1 = nn.Linear(input_dim, 512)
         self.relu1 = nn.ReLU()
         self.fc2 = nn.Linear(512, 8+9+21)
         self.dropout = nn.Dropout(0.5)
@@ -75,6 +48,20 @@ class mlp_module(nn.Module):
         x = self.fc2(x)
         return x
 
+class PositionalEncoding(nn.Module):
+	def __init__(self, d_model, max_len=5000):
+		super(PositionalEncoding, self).__init__()
+		pe = torch.zeros(max_len, d_model)
+		position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+		div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
+		pe[:, 0::2] = torch.sin(position * div_term)
+		pe[:, 1::2] = torch.cos(position * div_term)
+		pe = pe.unsqueeze(0).transpose(0, 1)
+		self.register_buffer('pe', pe)
+	def forward(self, x):
+		x = x + self.pe[:x.size(0), :]
+		return x
+
 class RAVENResnet18_MLP(RAVENBasicModel):
     def __init__(self, args):
         super(RAVENResnet18_MLP, self).__init__(args)
@@ -83,27 +70,8 @@ class RAVENResnet18_MLP(RAVENBasicModel):
         self.resnet18.fc = identity()
         self.mlp = mlp_module()
         # self.fc_tree_net = FCTreeNet(in_dim=300, img_dim=512)
-        self.optimizer = optim.Adam(self.parameters(), lr=args.lr, betas=(args.beta1, args.beta2), eps=args.epsilon)
         self.meta_alpha = args.meta_alpha
         self.meta_beta = args.meta_beta
-
-    def compute_loss(self, output, target, meta_target, meta_structure):
-        pred, meta_target_pred, meta_struct_pred = output[0], output[1], output[2]
-
-        target_loss = F.cross_entropy(pred, target)
-        meta_target_pred = torch.chunk(meta_target_pred, chunks=9, dim=1)
-        meta_target = torch.chunk(meta_target, chunks=9, dim=1)
-        meta_target_loss = 0.
-        for idx in range(0, 9):
-            meta_target_loss += F.binary_cross_entropy(torch.sigmoid(meta_target_pred[idx]), meta_target[idx])
-
-        meta_struct_pred = torch.chunk(meta_struct_pred, chunks=21, dim=1)
-        meta_structure = torch.chunk(meta_structure, chunks=21, dim=1)
-        meta_struct_loss = 0.
-        for idx in range(0, 21):
-            meta_struct_loss += F.binary_cross_entropy(torch.sigmoid(meta_struct_pred[idx]), meta_structure[idx])
-        loss = target_loss + self.meta_alpha*meta_struct_loss/21. + self.meta_beta*meta_target_loss/9.
-        return loss
 
     def forward(self, x, embedding, indicator):
         # alpha = 1.0
@@ -126,39 +94,22 @@ class RAVENTrans(RAVENBasicModel):
         self.resnet18.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)
         self.resnet18.fc = identity()
         self.transformer = nn.TransformerEncoder(
-            nn.TransformerEncoderLayer(512, 8),
-            4,
+            nn.TransformerEncoderLayer(512, 8, dim_feedforward=512),
+            1,
             nn.LayerNorm(512),
         )
-        self.mlp = mlp_module()
+        self.pos_emb = PositionalEncoding(512)
+        self.mlp = mlp_module(512)
         # self.fc_tree_net = FCTreeNet(in_dim=300, img_dim=512)
-        self.optimizer = optim.Adam(self.parameters(), lr=args.lr, betas=(args.beta1, args.beta2), eps=args.epsilon)
         self.meta_alpha = args.meta_alpha
         self.meta_beta = args.meta_beta
-
-    def compute_loss(self, output, target, meta_target, meta_structure):
-        pred, meta_target_pred, meta_struct_pred = output[0], output[1], output[2]
-
-        target_loss = F.cross_entropy(pred, target)
-        meta_target_pred = torch.chunk(meta_target_pred, chunks=9, dim=1)
-        meta_target = torch.chunk(meta_target, chunks=9, dim=1)
-        meta_target_loss = 0.
-        for idx in range(0, 9):
-            meta_target_loss += F.binary_cross_entropy(torch.sigmoid(meta_target_pred[idx]), meta_target[idx])
-
-        meta_struct_pred = torch.chunk(meta_struct_pred, chunks=21, dim=1)
-        meta_structure = torch.chunk(meta_structure, chunks=21, dim=1)
-        meta_struct_loss = 0.
-        for idx in range(0, 21):
-            meta_struct_loss += F.binary_cross_entropy(torch.sigmoid(meta_struct_pred[idx]), meta_structure[idx])
-        loss = target_loss + self.meta_alpha*meta_struct_loss/21. + self.meta_beta*meta_target_loss/9.
-        return loss
 
     def forward(self, x, embedding, indicator):
         B = x.size(0)
         features = self.resnet18(x.view(-1, 1, 224, 224)).reshape(B, 16, -1)
+        features = self.pos_emb(features)
         # TODO
-        final_features = self.transformer(features).max(-2)[0]
+        final_features = self.transformer(features).mean(-2)
         output = self.mlp(final_features)
         pred = output[:,0:8]
         meta_target_pred = output[:,8:17]
@@ -255,27 +206,8 @@ class RAVENNTM(RAVENBasicModel):
         #     num_write_heads=1,
         #     k_nn=1)
         # self.fc_tree_net = FCTreeNet(in_dim=300, img_dim=512)
-        self.optimizer = optim.Adam(self.parameters(), lr=args.lr, betas=(args.beta1, args.beta2), eps=args.epsilon)
         self.meta_alpha = args.meta_alpha
         self.meta_beta = args.meta_beta
-
-    def compute_loss(self, output, target, meta_target, meta_structure):
-        pred, meta_target_pred, meta_struct_pred = output[0], output[1], output[2]
-
-        target_loss = F.cross_entropy(pred, target)
-        meta_target_pred = torch.chunk(meta_target_pred, chunks=9, dim=1)
-        meta_target = torch.chunk(meta_target, chunks=9, dim=1)
-        meta_target_loss = 0.
-        for idx in range(0, 9):
-            meta_target_loss += F.binary_cross_entropy(torch.sigmoid(meta_target_pred[idx]), meta_target[idx])
-
-        meta_struct_pred = torch.chunk(meta_struct_pred, chunks=21, dim=1)
-        meta_structure = torch.chunk(meta_structure, chunks=21, dim=1)
-        meta_struct_loss = 0.
-        for idx in range(0, 21):
-            meta_struct_loss += F.binary_cross_entropy(torch.sigmoid(meta_struct_pred[idx]), meta_structure[idx])
-        loss = target_loss + self.meta_alpha*meta_struct_loss/21. + self.meta_beta*meta_target_loss/9.
-        return loss
 
     def forward(self, x, embedding, indicator):
         # alpha = 1.0
