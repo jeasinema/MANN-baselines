@@ -63,8 +63,12 @@ class KeyValueMemory(ValueMemory):
         """
         assert ((w == 0) + (w == 1)).all()
         B = w.size(0)
-        self.memory[:B] = self.memory[:B] * w.unsqueeze(-1)
-        self.memory_key[:B] = self.memory_key[:B] * w.unsqueeze(-1)
+        self.prev_memory = self.memory
+        self.prev_memory_key = self.memory_key
+        self.memory = self.prev_memory.clone()
+        self.memory_key = self.prev_memory_key.clone()
+        self.memory[:B] = self.prev_memory[:B] * w.unsqueeze(-1)
+        self.memory_key[:B] = self.prev_memory_key[:B] * w.unsqueeze(-1)
 
     def write(self, w, k, v, clear_before_write=False):
         """
@@ -77,8 +81,12 @@ class KeyValueMemory(ValueMemory):
             self.clear(w)
         write_k = torch.matmul(w.unsqueeze(-1), k.unsqueeze(1))
         write_v = torch.matmul(w.unsqueeze(-1), v.unsqueeze(1))
-        self.memory_key[:B] = self.memory_key[:B] + write_k
-        self.memory[:B] = self.memory[:B] + write_v
+        self.prev_memory = self.memory
+        self.prev_memory_key = self.memory_key
+        self.memory = self.prev_memory.clone()
+        self.memory_key = self.prev_memory_key.clone()
+        self.memory[:B] = self.prev_memory[:B] + write_v
+        self.memory_key[:B] = self.prev_memory_key[:B] + write_k
 
 
 class DNDMemory(KeyValueMemory):
@@ -110,8 +118,12 @@ class DNDMemory(KeyValueMemory):
             self.clear(w)
         write_k = torch.matmul(w.unsqueeze(-1), k.unsqueeze(1))
         write_v = torch.matmul(w.unsqueeze(-1), v.unsqueeze(1))
-        self.memory_key[:B] = self.memory_key[:B] + write_k
-        self.memory[:B] = self.memory[:B] + write_v
+        self.prev_memory = self.memory
+        self.prev_memory_key = self.memory_key
+        self.memory = self.prev_memory.clone()
+        self.memory_key = self.prev_memory_key.clone()
+        self.memory[:B] = self.prev_memory[:B] + write_v
+        self.memory_key[:B] = self.prev_memory_key[:B] + write_k
         self.mem_usage[:B] *= self.gamma
         self.mem_usage[:B] += w.detach()
 

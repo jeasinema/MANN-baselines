@@ -60,7 +60,9 @@ class ValueMemory(nn.Module):
         """
         assert ((w == 0) + (w == 1)).all()
         B = w.size(0)
-        self.memory[:B] = self.memory[:B] * w.unsqueeze(-1)
+        self.prev_memory = self.memory
+        self.memory = self.prev_memory.clone()
+        self.memory[:B] = self.prev_memory[:B] * w.unsqueeze(-1)
 
     def write(self, w, v, clear_before_write=False):
         """
@@ -71,7 +73,9 @@ class ValueMemory(nn.Module):
         if clear_before_write:
             self.clear(w)
         write_v = torch.matmul(w.unsqueeze(-1), v.unsqueeze(1))
-        self.memory[:B] = self.memory[:B] + write_v
+        self.prev_memory = self.memory
+        self.memory = self.prev_memory.clone()
+        self.memory[:B] = self.prev_memory[:B] + write_v
 
     def read(self, w):
         """
@@ -98,7 +102,9 @@ class NTMMemory(ValueMemory):
         B = w.size(0)
         write_add_v = torch.matmul(w.unsqueeze(-1), add_v.unsqueeze(1))
         write_del_v = torch.matmul(w.unsqueeze(-1), del_v.unsqueeze(1))
-        self.memory[:B] = self.memory[:B] * (1 - write_del_v) + write_add_v
+        self.prev_memory = self.memory
+        self.memory = self.prev_memory.clone()
+        self.memory[:B] = self.prev_memory[:B] * (1 - write_del_v) + write_add_v
 
 
 class AppendingMemory(ValueMemory):
