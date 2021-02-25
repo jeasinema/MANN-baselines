@@ -25,7 +25,6 @@ class MANNMeta(SimpleNTM):
         model_output_size,
         batch_size,
         # Memory
-        mem_class=ValueMemory,
         mem_size=10,
         mem_value_size=256,
         mem_extra_args=None,
