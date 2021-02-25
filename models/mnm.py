@@ -10,4 +10,5 @@ class MNM(nn.Module):
     def __init__(self):
         pass
     def forward(self):
+        self.memory.reset()
         pass

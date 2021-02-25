@@ -36,6 +36,7 @@ class KeyValueMemory(ValueMemory):
 
     def reset(self):
         stdev = 1 / (np.sqrt(self.mem_size + self.key_size))
+        self.memory_key = self.memory_key.detach()
         nn.init.uniform_(self.memory_key, -stdev, stdev)
         super(KeyValueMemory, self).reset()
 

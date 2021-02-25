@@ -204,6 +204,7 @@ class MRA(SimpleNTM):
         :param  x: shape (T, B, ...)
         :param init_latent: shape same as current latent state
         """
+        self.memory.reset()
         T = x.size(0)
         outputs = []
         prev_latent = init_latent

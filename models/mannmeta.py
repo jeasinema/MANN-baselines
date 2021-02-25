@@ -74,7 +74,7 @@ class MANNMeta(SimpleNTM):
         for whead, prev_rstate, w_lu in zip(self.write_heads, prev_rhead_state, w_lus):
             o = whead(x)
             v, alpha = split_cols(o, self.write_length)
-            w = F.sigmoid(alpha) * prev_rstate + (1 - F.sigmoid(alpha)) * w_lu
+            w = torch.sigmoid(alpha) * prev_rstate + (1 - torch.sigmoid(alpha)) * w_lu
             self.memory.clear(w_lu)
             self.memory.write(w, v)
             ws.append(w)

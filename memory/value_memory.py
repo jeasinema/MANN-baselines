@@ -35,6 +35,7 @@ class ValueMemory(nn.Module):
 
     def reset(self):
         stdev = 1 / (np.sqrt(self.mem_size + self.value_size))
+        self.memory = self.memory.detach()
         nn.init.uniform_(self.memory, -stdev, stdev)
 
     def similarity(self, v, topk=-1):

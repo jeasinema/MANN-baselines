@@ -7,6 +7,9 @@ import torch.nn.functional as F
 import torchvision.models as models
 
 from .dnc import SimpleNTM, NTM
+from .mra import MRA
+from .mannmeta import MANNMeta
+from .dnd import DND
 
 class RAVENBasicModel(nn.Module):
     def __init__(self, args):
@@ -92,13 +95,13 @@ class RAVENResnet18_MLP(RAVENBasicModel):
         meta_target = torch.chunk(meta_target, chunks=9, dim=1)
         meta_target_loss = 0.
         for idx in range(0, 9):
-            meta_target_loss += F.binary_cross_entropy(F.sigmoid(meta_target_pred[idx]), meta_target[idx])
+            meta_target_loss += F.binary_cross_entropy(torch.sigmoid(meta_target_pred[idx]), meta_target[idx])
 
         meta_struct_pred = torch.chunk(meta_struct_pred, chunks=21, dim=1)
         meta_structure = torch.chunk(meta_structure, chunks=21, dim=1)
         meta_struct_loss = 0.
         for idx in range(0, 21):
-            meta_struct_loss += F.binary_cross_entropy(F.sigmoid(meta_struct_pred[idx]), meta_structure[idx])
+            meta_struct_loss += F.binary_cross_entropy(torch.sigmoid(meta_struct_pred[idx]), meta_structure[idx])
         loss = target_loss + self.meta_alpha*meta_struct_loss/21. + self.meta_beta*meta_target_loss/9.
         return loss
 
@@ -141,13 +144,13 @@ class RAVENTrans(RAVENBasicModel):
         meta_target = torch.chunk(meta_target, chunks=9, dim=1)
         meta_target_loss = 0.
         for idx in range(0, 9):
-            meta_target_loss += F.binary_cross_entropy(F.sigmoid(meta_target_pred[idx]), meta_target[idx])
+            meta_target_loss += F.binary_cross_entropy(torch.sigmoid(meta_target_pred[idx]), meta_target[idx])
 
         meta_struct_pred = torch.chunk(meta_struct_pred, chunks=21, dim=1)
         meta_structure = torch.chunk(meta_structure, chunks=21, dim=1)
         meta_struct_loss = 0.
         for idx in range(0, 21):
-            meta_struct_loss += F.binary_cross_entropy(F.sigmoid(meta_struct_pred[idx]), meta_structure[idx])
+            meta_struct_loss += F.binary_cross_entropy(torch.sigmoid(meta_struct_pred[idx]), meta_structure[idx])
         loss = target_loss + self.meta_alpha*meta_struct_loss/21. + self.meta_beta*meta_target_loss/9.
         return loss
 
@@ -185,38 +188,38 @@ class RAVENNTM(RAVENBasicModel):
         #     num_read_heads=1,
         #     num_write_heads=1,
         #     head_beta_g_s_gamma=(1,1,3,1))
-        self.mann = SimpleNTM(
-            self.resnet18,
-            512,
-            8+9+21,
-            args.batch_size,
-            # Memory
-            mem_size=10,
-            mem_value_size=512,
-            # Controller
-            controller='lstm',
-            controller_hidden_units=None,
-            controller_output_size=128,
-            # R/W head
-            num_read_heads=1,
-            num_write_heads=1)
-        # self.mann = MRA(
+        # self.mann = SimpleNTM(
         #     self.resnet18,
         #     512,
         #     8+9+21,
         #     args.batch_size,
         #     # Memory
         #     mem_size=10,
-        #     mem_extra_args={'key_size': 256},
+        #     mem_value_size=512,
         #     # Controller
         #     controller='lstm',
         #     controller_hidden_units=None,
         #     controller_output_size=128,
         #     # R/W head
         #     num_read_heads=1,
-        #     num_write_heads=1,
-        #     k_nn=1,
-        #     jumpy_bp=True)
+        #     num_write_heads=1)
+        self.mann = MRA(
+            self.resnet18,
+            512,
+            8+9+21,
+            args.batch_size,
+            # Memory
+            mem_size=10,
+            mem_extra_args={'key_size': 256},
+            # Controller
+            controller='lstm',
+            controller_hidden_units=None,
+            controller_output_size=128,
+            # R/W head
+            num_read_heads=1,
+            num_write_heads=1,
+            k_nn=1,
+            jumpy_bp=True)
         # self.mann = MANNMeta(
         #     self.resnet18,
         #     512,
@@ -235,6 +238,22 @@ class RAVENNTM(RAVENBasicModel):
         #     num_write_heads=1,
         #     # LRUA
         #     gamma=0.9)
+        # self.mann = DND(
+        #     self.resnet18,
+        #     512,
+        #     8+9+21,
+        #     args.batch_size,
+        #     # Memory
+        #     mem_size=10,
+        #     mem_extra_args={'key_size': 256},
+        #     # Controller
+        #     controller='lstm',
+        #     controller_hidden_units=None,
+        #     controller_output_size=128,
+        #     # R/W head
+        #     num_read_heads=1,
+        #     num_write_heads=1,
+        #     k_nn=1)
         # self.fc_tree_net = FCTreeNet(in_dim=300, img_dim=512)
         self.optimizer = optim.Adam(self.parameters(), lr=args.lr, betas=(args.beta1, args.beta2), eps=args.epsilon)
         self.meta_alpha = args.meta_alpha
@@ -248,13 +267,13 @@ class RAVENNTM(RAVENBasicModel):
         meta_target = torch.chunk(meta_target, chunks=9, dim=1)
         meta_target_loss = 0.
         for idx in range(0, 9):
-            meta_target_loss += F.binary_cross_entropy(F.sigmoid(meta_target_pred[idx]), meta_target[idx])
+            meta_target_loss += F.binary_cross_entropy(torch.sigmoid(meta_target_pred[idx]), meta_target[idx])
 
         meta_struct_pred = torch.chunk(meta_struct_pred, chunks=21, dim=1)
         meta_structure = torch.chunk(meta_structure, chunks=21, dim=1)
         meta_struct_loss = 0.
         for idx in range(0, 21):
-            meta_struct_loss += F.binary_cross_entropy(F.sigmoid(meta_struct_pred[idx]), meta_structure[idx])
+            meta_struct_loss += F.binary_cross_entropy(torch.sigmoid(meta_struct_pred[idx]), meta_structure[idx])
         loss = target_loss + self.meta_alpha*meta_struct_loss/21. + self.meta_beta*meta_target_loss/9.
         return loss
 
