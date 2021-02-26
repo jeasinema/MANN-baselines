@@ -67,6 +67,7 @@ class MRA(SimpleNTM):
         del self.write_heads
         del self.output_layer
         del self.init_read
+        controller_hidden_units = controller_hidden_units if controller_hidden_units else []
         if controller == 'mlp':
             self.controller = []
             last_dim = self.encoder_output_size + num_read_heads * self.controller_output_size

@@ -17,12 +17,13 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from dataset import RAVENdataset as dataset, RAVENToTensor as ToTensor
 from models import *
 
-GPUID = '0,2'
-device_ids = [0, 2]
+GPUID = '4'
+device_ids = [4]
 os.environ["CUDA_VISIBLE_DEVICES"] = GPUID
 
 parser = argparse.ArgumentParser(description='our_model')
 parser.add_argument('--model', type=str, default='resnet')
+parser.add_argument('--tag', type=str, default='resnet')
 parser.add_argument('--epochs', type=int, default=200)
 parser.add_argument('--batch_size', type=int, default=32)
 parser.add_argument('--seed', type=int, default=12345)
@@ -192,6 +193,7 @@ def test(epoch):
 
 def main():
     for epoch in range(0, args.epochs):
+        print('{}--{}--{}--bs{}'.format(args.tag, args.model, args.path, args.batch_size))
         train(args, epoch)
         avg_loss, avg_acc = validate(args, epoch)
         test(epoch)

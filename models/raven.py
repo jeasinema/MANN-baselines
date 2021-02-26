@@ -160,30 +160,30 @@ class RAVENNTM(RAVENBasicModel):
             8+9+21,
             args.batch_size,
             # Memory
-            mem_size=10,
+            mem_size=16,
             mem_extra_args={'key_size': 256},
             # Controller
-            controller='lstm',
+            controller='mlp',
             controller_hidden_units=None,
-            controller_output_size=128,
+            controller_output_size=256,
             # R/W head
             num_read_heads=1,
             num_write_heads=1,
-            k_nn=1,
+            k_nn=4,
             jumpy_bp=True)
         # self.mann = MANNMeta(
         #     self.resnet18,
         #     512,
         #     8+9+21,
-        #     args.batch_size
+        #     args.batch_size,
         #     # Memory
-        #     mem_size=10,
-        #     mem_value_size=256,
+        #     mem_size=20,
+        #     mem_value_size=512,
         #     mem_extra_args=None,
         #     # Controller
-        #     controller='lstm',
+        #     controller='mlp',
         #     controller_hidden_units=None,
-        #     controller_output_size=128,
+        #     controller_output_size=512,
         #     # R/W head
         #     num_read_heads=1,
         #     num_write_heads=1,
