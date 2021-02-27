@@ -108,6 +108,8 @@ def train(args, epoch):
     loss_all = 0.0
     acc_all = 0.0
     counter = 0
+    total_correct = 0
+    total_samples = 0
     for batch_idx, (image, target, meta_target, meta_structure, embedding, indicator) in enumerate(trainloader):
         counter += 1
         if args.cuda:
@@ -131,8 +133,11 @@ def train(args, epoch):
         print('Train: Epoch:{}, Batch:{}, Loss:{:.6f}, Acc:{:.4f}.'.format(epoch, batch_idx, loss, acc))
         loss_all += loss
         acc_all += acc
+        total_correct += correct
+        total_samples += target.size(0)
     if counter > 0:
         print("Avg Training Loss: {:.6f}".format(loss_all/float(counter)))
+    return 100 * total_correct/float(total_samples)
 
 def validate(args, epoch):
     model.eval()
@@ -142,6 +147,8 @@ def validate(args, epoch):
     loss_all = 0.0
     acc_all = 0.0
     counter = 0
+    total_correct = 0
+    total_samples = 0
     for batch_idx, (image, target, meta_target, meta_structure, embedding, indicator) in enumerate(validloader):
         counter += 1
         if args.cuda:
@@ -161,9 +168,11 @@ def validate(args, epoch):
         # print('Validate: Epoch:{}, Batch:{}, Loss:{:.6f}, Acc:{:.4f}.'.format(epoch, batch_idx, loss, acc)) 
         loss_all += loss
         acc_all += acc
+        total_correct += correct
+        total_samples += target.size(0)
     if counter > 0:
-        print("Total Validation Loss: {:.6f}, Acc: {:.4f}".format(loss_all/float(counter), acc_all/float(counter)))
-    return loss_all/float(counter), acc_all/float(counter)
+        print("Total Validation Loss: {:.6f}, Acc: {:.4f}".format(loss_all/float(counter), 100 * total_correct/float(total_samples)))
+    return loss_all/float(counter), 100 * (total_correct/float(total_samples))
 
 def test(epoch):
     model.eval()
@@ -171,6 +180,8 @@ def test(epoch):
 
     acc_all = 0.0
     counter = 0
+    total_correct = 0
+    total_samples = 0
     for batch_idx, (image, target, meta_target, meta_structure, embedding, indicator) in enumerate(testloader):
         counter += 1
         if args.cuda:
@@ -187,16 +198,30 @@ def test(epoch):
         acc = correct * 100.0 / target.size()[0]
         # print('Test: Epoch:{}, Batch:{}, Acc:{:.4f}.'.format(epoch, batch_idx, acc))  
         acc_all += acc
+        total_correct += correct
+        total_samples += target.size(0)
     if counter > 0:
-        print("Total Testing Acc: {:.4f}".format(acc_all / float(counter)))
-    return acc_all/float(counter)
+        print("Total Testing Acc: {:.4f}".format(100 * total_correct / float(total_samples)))
+    return 100 * total_correct/float(total_samples)
 
 def main():
+    best_train_acc = 0
+    best_val_acc= 0
+    best_test_acc = 0
     for epoch in range(0, args.epochs):
         print('{}--{}--{}--bs{}'.format(args.tag, args.model, args.path, args.batch_size))
-        train(args, epoch)
-        avg_loss, avg_acc = validate(args, epoch)
-        test(epoch)
+        train_acc = train(args, epoch)
+        avg_loss, val_acc = validate(args, epoch)
+        test_acc = test(epoch)
+        best_train_acc = train_acc if train_acc > best_train_acc else best_train_acc
+        best_val_acc = val_acc if val_acc > best_val_acc else best_val_acc
+        best_test_acc = test_acc if test_acc > best_test_acc else best_test_acc
+        print('{}--{}--{}--bs{}'.format(args.tag, args.model, args.path, args.batch_size))
+        print("""
+        best train acc:{}
+        best val acc:{}
+        best test acc:{}
+                """.format(best_train_acc, best_val_acc, best_test_acc))
         # model.save_model(args.save, epoch, avg_acc, avg_loss)
 
 
