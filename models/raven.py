@@ -95,7 +95,7 @@ class RAVENTrans(RAVENBasicModel):
         self.resnet18.fc = identity()
         self.transformer = nn.TransformerEncoder(
             nn.TransformerEncoderLayer(512, 8, dim_feedforward=512),
-            1,
+            4,
             nn.LayerNorm(512),
         )
         self.pos_emb = PositionalEncoding(512)
@@ -160,7 +160,7 @@ class RAVENNTM(RAVENBasicModel):
             8+9+21,
             args.batch_size,
             # Memory
-            mem_size=16,
+            mem_size=20,
             mem_extra_args={'key_size': 256},
             # Controller
             controller='mlp',

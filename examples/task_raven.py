@@ -5,6 +5,7 @@ import os
 import sys
 import numpy as np
 import argparse
+from tqdm import tqdm
 
 import torch
 import torch.nn as nn
@@ -17,8 +18,8 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from dataset import RAVENdataset as dataset, RAVENToTensor as ToTensor
 from models import *
 
-GPUID = '4'
-device_ids = [4]
+GPUID = '8'
+device_ids = [8]
 os.environ["CUDA_VISIBLE_DEVICES"] = GPUID
 
 parser = argparse.ArgumentParser(description='our_model')
@@ -110,7 +111,8 @@ def train(args, epoch):
     counter = 0
     total_correct = 0
     total_samples = 0
-    for batch_idx, (image, target, meta_target, meta_structure, embedding, indicator) in enumerate(trainloader):
+    t = tqdm(trainloader, desc='-')
+    for image, target, meta_target, meta_structure, embedding, indicator in t:
         counter += 1
         if args.cuda:
             image = image.cuda()
@@ -130,7 +132,8 @@ def train(args, epoch):
         acc = correct * 100.0 / target.size()[0]
         loss = loss.item()
 
-        print('Train: Epoch:{}, Batch:{}, Loss:{:.6f}, Acc:{:.4f}.'.format(epoch, batch_idx, loss, acc))
+        t.set_description('Train: Epoch:{}, Loss:{:.6f}, Acc:{:.4f}.'.format(epoch, loss, acc))
+        t.refresh()
         loss_all += loss
         acc_all += acc
         total_correct += correct
@@ -149,7 +152,8 @@ def validate(args, epoch):
     counter = 0
     total_correct = 0
     total_samples = 0
-    for batch_idx, (image, target, meta_target, meta_structure, embedding, indicator) in enumerate(validloader):
+    t = tqdm(validloader, desc='valid')
+    for image, target, meta_target, meta_structure, embedding, indicator in t:
         counter += 1
         if args.cuda:
             image = image.cuda()
@@ -165,7 +169,6 @@ def validate(args, epoch):
         correct = pred.eq(target.data).cpu().sum().numpy()
         acc = correct * 100.0 / target.size()[0]
         loss = loss.item()
-        # print('Validate: Epoch:{}, Batch:{}, Loss:{:.6f}, Acc:{:.4f}.'.format(epoch, batch_idx, loss, acc)) 
         loss_all += loss
         acc_all += acc
         total_correct += correct
@@ -182,7 +185,8 @@ def test(epoch):
     counter = 0
     total_correct = 0
     total_samples = 0
-    for batch_idx, (image, target, meta_target, meta_structure, embedding, indicator) in enumerate(testloader):
+    t = tqdm(testloader, desc='test')
+    for image, target, meta_target, meta_structure, embedding, indicator in t:
         counter += 1
         if args.cuda:
             image = image.cuda()
@@ -196,7 +200,6 @@ def test(epoch):
         pred = output[0].data.max(1)[1]
         correct = pred.eq(target.data).cpu().sum().numpy()
         acc = correct * 100.0 / target.size()[0]
-        # print('Test: Epoch:{}, Batch:{}, Acc:{:.4f}.'.format(epoch, batch_idx, acc))  
         acc_all += acc
         total_correct += correct
         total_samples += target.size(0)
