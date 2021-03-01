@@ -217,3 +217,61 @@ class RAVENNTM(RAVENBasicModel):
         meta_target_pred = output[:,8:17]
         meta_struct_pred = output[:,17:38]
         return pred, meta_target_pred, meta_struct_pred
+
+############################
+class RAVENL3(RAVENBasicModel):
+    def __init__(self, args):
+        super(RAVENL3, self).__init__(args)
+        self.resnet18 = models.resnet18(pretrained=False)
+        self.resnet18.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3, bias=False)
+        self.resnet18.fc = identity()
+        self.rule_pred = nn.Linear(512, 7)
+        self.mlp = mlp_module()
+        self.meta_alpha = args.meta_alpha
+        self.meta_beta = args.meta_beta
+
+    def forward(self, x, embedding, indicator):
+        B = x.size(0)
+        x = x.view(-1, 16, 224, 224)
+        pos_1 = x[:, :3, ...]
+        pos_2 = x[:, 3:6, ...]
+        pos_3 = x[:]
+
+        features = self.resnet18(x.view(-1, 16, 224, 224))
+        final_features = features
+        output = self.mlp(final_features)
+        pred = output[:,0:8]
+        meta_target_pred = output[:,8:17]
+        meta_struct_pred = output[:,17:38]
+        return pred, meta_target_pred, meta_struct_pred
+
+def compute_loss_l3(args, output, target, meta_target, meta_structure):
+    pass
+
+def pred_l3(args, x):
+    pass
+
+class RAVENEBCL(RAVENBasicModel):
+    def __init__(self, args):
+        super(RAVENEBCL, self).__init__(args)
+        self.resnet18 = models.resnet18(pretrained=False)
+        self.resnet18.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)
+        self.resnet18.fc = identity()
+        self.mlp = mlp_module()
+        self.meta_alpha = args.meta_alpha
+        self.meta_beta = args.meta_beta
+
+    def forward(self, x, embedding, indicator):
+        features = self.resnet18(x.view(-1, 16, 224, 224))
+        final_features = features
+        output = self.mlp(final_features)
+        pred = output[:,0:8]
+        meta_target_pred = output[:,8:17]
+        meta_struct_pred = output[:,17:38]
+        return pred, meta_target_pred, meta_struct_pred
+
+def compute_loss_ebcl(args, output, target, meta_target, meta_structure):
+    pass
+
+def pred_ebcl(args, x):
+    pass
