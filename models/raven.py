@@ -49,18 +49,19 @@ class mlp_module(nn.Module):
         return x
 
 class PositionalEncoding(nn.Module):
-	def __init__(self, d_model, max_len=5000):
-		super(PositionalEncoding, self).__init__()
-		pe = torch.zeros(max_len, d_model)
-		position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
-		div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
-		pe[:, 0::2] = torch.sin(position * div_term)
-		pe[:, 1::2] = torch.cos(position * div_term)
-		pe = pe.unsqueeze(0).transpose(0, 1)
-		self.register_buffer('pe', pe)
-	def forward(self, x):
-		x = x + self.pe[:x.size(0), :]
-		return x
+    def __init__(self, d_model, max_len=5000):
+        super(PositionalEncoding, self).__init__()
+        pe = torch.zeros(max_len, d_model)
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        pe = pe.unsqueeze(0)
+        self.register_buffer('pe', pe)
+    def forward(self, x):
+        # Input (B, T, ...)
+        x = x + self.pe[:, :x.size(1), :]
+        return x
 
 class RAVENResnet18_MLP(RAVENBasicModel):
     def __init__(self, args):
@@ -93,6 +94,7 @@ class RAVENTrans(RAVENBasicModel):
         self.resnet18 = models.resnet18(pretrained=False)
         self.resnet18.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)
         self.resnet18.fc = identity()
+        self.layernorm = nn.LayerNorm([16, 512])
         self.transformer = nn.TransformerEncoder(
             nn.TransformerEncoderLayer(512, 8, dim_feedforward=512),
             4,
@@ -103,10 +105,23 @@ class RAVENTrans(RAVENBasicModel):
         # self.fc_tree_net = FCTreeNet(in_dim=300, img_dim=512)
         self.meta_alpha = args.meta_alpha
         self.meta_beta = args.meta_beta
+        # # Context norm
+        # self.gamma = nn.Parameter(torch.ones(512))
+        # self.beta = nn.Parameter(torch.zeros(512))
+
+    # def apply_context_norm(self, z_seq):
+    #     # Input: [T, ...]
+    #     eps = 1e-8
+    #     z_mu = z_seq.mean(0)
+    #     z_sigma = (z_seq.var(0) + eps).sqrt()
+    #     z_seq = (z_seq - z_mu.unsqueeze(0)) / z_sigma.unsqueeze(0)
+    #     z_seq = (z_seq * self.gamma) + self.beta
+    #     return z_seq
 
     def forward(self, x, embedding, indicator):
         B = x.size(0)
         features = self.resnet18(x.view(-1, 1, 224, 224)).reshape(B, 16, -1)
+        features = self.layernorm(features)
         features = self.pos_emb(features)
         # TODO
         final_features = self.transformer(features).mean(-2)
@@ -129,15 +144,15 @@ class RAVENNTM(RAVENBasicModel):
         #     8+9+21,
         #     args.batch_size,
         #     # Memory
-        #     mem_size=10,
+        #     mem_size=20,
         #     mem_value_size=512,
         #     # Controller
-        #     controller='lstm',
+        #     controller='mlp',
         #     controller_hidden_units=None,
         #     controller_output_size=128,
         #     # R/W head
-        #     num_read_heads=1,
-        #     num_write_heads=1,
+        #     num_read_heads=2,
+        #     num_write_heads=2,
         #     head_beta_g_s_gamma=(1,1,3,1))
         # self.mann = SimpleNTM(
         #     self.resnet18,
