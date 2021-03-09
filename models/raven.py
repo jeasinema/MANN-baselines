@@ -49,18 +49,18 @@ class mlp_module(nn.Module):
         return x
 
 class PositionalEncoding(nn.Module):
-	def __init__(self, d_model, max_len=5000):
-		super(PositionalEncoding, self).__init__()
-		pe = torch.zeros(max_len, d_model)
-		position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
-		div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
-		pe[:, 0::2] = torch.sin(position * div_term)
-		pe[:, 1::2] = torch.cos(position * div_term)
-		pe = pe.unsqueeze(0).transpose(0, 1)
-		self.register_buffer('pe', pe)
-	def forward(self, x):
-		x = x + self.pe[:x.size(0), :]
-		return x
+    def __init__(self, d_model, max_len=5000):
+        super(PositionalEncoding, self).__init__()
+        pe = torch.zeros(max_len, d_model)
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        pe = pe.unsqueeze(0).transpose(0, 1)
+        self.register_buffer('pe', pe)
+    def forward(self, x):
+        x = x + self.pe[:x.size(0), :]
+        return x
 
 class RAVENResnet18_MLP(RAVENBasicModel):
     def __init__(self, args):
@@ -225,18 +225,26 @@ class RAVENL3(RAVENBasicModel):
         self.resnet18 = models.resnet18(pretrained=False)
         self.resnet18.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3, bias=False)
         self.resnet18.fc = identity()
-        self.rule_pred = nn.Linear(512, 7)
+        # 3x3
+        self.pos_num_rule_pred = nn.Linear(512, 17+1)
+        self.type_rule_pred = nn.Linear(512, 7+1)
+        self.size_rule_pred = nn.Linear(512, 7+1)
+        self.color_rule_pred = nn.Linear(512, 9+1)
+        # 2x2
+        self.pos_num_rule_pred = nn.Linear(512, 13+1)
+        self.type_rule_pred = nn.Linear(512, 7+1)
+        self.size_rule_pred = nn.Linear(512, 7+1)
+        self.color_rule_pred = nn.Linear(512, 9+1)
+        # others (single_center)
+        self.pos_num_rule_pred = nn.Linear(512, 0+1)
+        self.type_rule_pred = nn.Linear(512, 7+1)
+        self.size_rule_pred = nn.Linear(512, 7+1)
+        self.color_rule_pred = nn.Linear(512, 9+1)
+
         self.mlp = mlp_module()
-        self.meta_alpha = args.meta_alpha
-        self.meta_beta = args.meta_beta
 
-    def forward(self, x, embedding, indicator):
+    def forward(self, x, target, rule_target):
         B = x.size(0)
-        x = x.view(-1, 16, 224, 224)
-        pos_1 = x[:, :3, ...]
-        pos_2 = x[:, 3:6, ...]
-        pos_3 = x[:]
-
         features = self.resnet18(x.view(-1, 16, 224, 224))
         final_features = features
         output = self.mlp(final_features)
@@ -245,7 +253,7 @@ class RAVENL3(RAVENBasicModel):
         meta_struct_pred = output[:,17:38]
         return pred, meta_target_pred, meta_struct_pred
 
-def compute_loss_l3(args, output, target, meta_target, meta_structure):
+def compute_loss_l3(args, output, target, rule_target):
     pass
 
 def pred_l3(args, x):
@@ -261,7 +269,7 @@ class RAVENEBCL(RAVENBasicModel):
         self.meta_alpha = args.meta_alpha
         self.meta_beta = args.meta_beta
 
-    def forward(self, x, embedding, indicator):
+    def forward(self, x, target, rule_target):
         features = self.resnet18(x.view(-1, 16, 224, 224))
         final_features = features
         output = self.mlp(final_features)
@@ -270,7 +278,7 @@ class RAVENEBCL(RAVENBasicModel):
         meta_struct_pred = output[:,17:38]
         return pred, meta_target_pred, meta_struct_pred
 
-def compute_loss_ebcl(args, output, target, meta_target, meta_structure):
+def compute_loss_ebcl(args, output, target, rule_target):
     pass
 
 def pred_ebcl(args, x):

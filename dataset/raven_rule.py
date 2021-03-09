@@ -15,6 +15,48 @@ def imresize(img_src, size):
     return np.array(Image.fromarray(img_src).resize(size=size))
 
 
+def image_rule_sample_to_lang_sample(image, target, rule_target):
+    # image: (B, 16, 1, 224, 224)
+    # target: (B)
+    # rule_target: (B, 4)
+    B = x.size(0)
+    mask_pos_choice = torch.zeros(B, 8).scatter_(1, target.unsqueeze(1), 1).bool()
+    pos_choice = x[:, 8:][mask_pos_choice].view(B, 1, 224, 224)
+    neg_choice = x[:, 8:][~mask_pos_choice].view(B, 7, 1, 224, 224)
+    x = x.view(-1, 16, 224, 224)
+    pos_1 = x[:, :3, ...]
+    pos_2 = x[:, 3:6, ...]
+    pos_3 = torch.cat([x[:, 6:8, ...], pos_choice], dim=1)
+    negs = [torch.cat([x[:, 6:8, ...], neg_choice[:, i]], dim=1) for i in range(7)]
+
+    num_pos = B * 3
+    new_data = torch.cat(negs.extend([pos_1, pos_2, pos_3]), dim=0)
+    new_bin_target = torch.zeros(B)
+    new_bin_target[-num_pos:] = 1
+    new_pos_num_rule_target = torch.cat([
+        torch.zeros(B * 7),
+        rule_target[:, 0]+1,
+        rule_target[:, 0]+1,
+        rule_target[:, 0]+1])
+    new_type_rule_target = torch.cat([
+        torch.zeros(B * 7),
+        rule_target[:, 1]+1,
+        rule_target[:, 1]+1,
+        rule_target[:, 1]+1])
+    new_size_rule_target = torch.cat([
+        torch.zeros(B * 7),
+        rule_target[:, 2]+1,
+        rule_target[:, 2]+1,
+        rule_target[:, 2]+1])
+    new_color_rule_target = torch.cat([
+        torch.zeros(B * 7),
+        rule_target[:, 3]+1,
+        rule_target[:, 3]+1,
+        rule_target[:, 3]+1])
+
+    return new_data, new_bin_target, (new_pos_num_rule_targetm new_type_rule_target, new_size_rule_target, new_color_rule_target)
+
+
 class Dataset(torch.utils.data.Dataset):
     def __init__(self, dataset_path, dataset_type, img_size, config, test=False, shuffle=False):
         self.dataset_path = dataset_path
@@ -254,6 +296,7 @@ class DatasetAttr(Dataset):
             choices = choices[indices, :, :]
             image = np.concatenate((context, choices))
 
+        # cut the image into sub-pieces
         image = getattr(self, self.config)(image)
 
         image = torch.tensor(image, dtype=torch.float)
@@ -266,12 +309,12 @@ class DatasetAttr(Dataset):
         return image, target, exist_gt, type_gt, size_gt, color_gt
 
 
-class DatasetRule(Dataset):
-    # Shape:
-    # pos_num_rule: (B) 0-12 (2x2) 0-16 (3x3) 0 (others)
-    # type_rule: (B) 0-6
-    # size_rule: (B) 0-6
-    # color_rule: (B) 0-8
+class RavenDatasetRule(Dataset):
+    # Shape: (B, 4)
+    # pos_num_rule: 0-12 (2x2) 0-16 (3x3) 0 (others)
+    # type_rule: 0-6
+    # size_rule: 0-6
+    # color_rule: 0-8
     def __init__(self, dataset_path, dataset_type, img_size, config, shuffle=False):
         if "left" in config or "up" in config or "out" in config:
             raise NotImplementedError("Only support one comp config")
@@ -301,7 +344,9 @@ class DatasetRule(Dataset):
             choices = choices[indices, :, :]
             image = np.concatenate((context, choices))
 
-        image = getattr(self, self.config)(image)
+        # cut the image into sub-pieces
+        # image = getattr(self, self.config)(image)
+        image = self.center_single(image)
 
         image = torch.tensor(image, dtype=torch.float)
         rule_gt = np.load(data_path.replace(".npz", "_rule_comp0.npz"))
@@ -310,10 +355,10 @@ class DatasetRule(Dataset):
         size_rule = torch.tensor(rule_gt["size_rule"], dtype=torch.long)
         color_rule = torch.tensor(rule_gt["color_rule"], dtype=torch.long)
 
-        return image, target, pos_num_rule, type_rule, size_rule, color_rule
+        return image, target, torch.stack([pos_num_rule, type_rule, size_rule, color_rule])
 
 
-class DatasetGT(DatasetzR):
+class DatasetGT(Dataset):
     def __init__(self, dataset_path, dataset_type, img_size, config, shuffle=False):
         self.dataset_path = dataset_path
         self.file_names = [f for f in glob.glob(os.path.join(self.dataset_path, config, "*.npz")) \
