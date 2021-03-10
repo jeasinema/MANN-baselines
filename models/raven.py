@@ -94,7 +94,6 @@ class RAVENTrans(RAVENBasicModel):
         self.resnet18 = models.resnet18(pretrained=False)
         self.resnet18.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)
         self.resnet18.fc = identity()
-        self.layernorm = nn.LayerNorm([16, 512])
         self.transformer = nn.TransformerEncoder(
             nn.TransformerEncoderLayer(512, 8, dim_feedforward=512),
             4,
@@ -121,10 +120,10 @@ class RAVENTrans(RAVENBasicModel):
     def forward(self, x, embedding, indicator):
         B = x.size(0)
         features = self.resnet18(x.view(-1, 1, 224, 224)).reshape(B, 16, -1)
-        features = self.layernorm(features)
         features = self.pos_emb(features)
-        # TODO
-        final_features = self.transformer(features).mean(-2)
+        # (B, T, ...) -> (T, B, ...) as required by the transformer
+        features = features.transpose(0, 1)
+        final_features = self.transformer(features).mean(0)
         output = self.mlp(final_features)
         pred = output[:,0:8]
         meta_target_pred = output[:,8:17]

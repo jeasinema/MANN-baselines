@@ -17,7 +17,7 @@ class RAVENdataset(Dataset):
         self.root_dir = root_dir
         self.transform = transform
         self.file_names = [f for f in glob.glob(os.path.join(root_dir, "*", "*.npz")) \
-                            if dataset_type in f]
+                            if dataset_type in f and "rule" not in f and "attr" not in f]
         self.img_size = img_size
         # self.embeddings = np.load(os.path.join(root_dir, 'embedding.npy'), allow_pickle=True, encoding='latin1')
         self.shuffle = shuffle

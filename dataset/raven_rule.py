@@ -54,7 +54,7 @@ def image_rule_sample_to_lang_sample(image, target, rule_target):
         rule_target[:, 3]+1,
         rule_target[:, 3]+1])
 
-    return new_data, new_bin_target, (new_pos_num_rule_targetm new_type_rule_target, new_size_rule_target, new_color_rule_target)
+    return new_data, new_bin_target, (new_pos_num_rule_target, new_type_rule_target, new_size_rule_target, new_color_rule_target)
 
 
 class Dataset(torch.utils.data.Dataset):

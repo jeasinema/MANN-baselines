@@ -18,8 +18,8 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from dataset import RAVENdataset as dataset, RAVENToTensor as ToTensor
 from models import *
 
-GPUID = '1'
-device_ids = [1]
+GPUID = '2'
+device_ids = [2]
 os.environ["CUDA_VISIBLE_DEVICES"] = GPUID
 
 parser = argparse.ArgumentParser(description='our_model')
