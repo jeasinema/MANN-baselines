@@ -12,6 +12,14 @@ from mannbaselines.models.mra import MRA
 from mannbaselines.models.mannmeta import MANNMeta
 from mannbaselines.models.dnd import DND
 
+def apply_context_norm(z_seq, gamma, beta):
+    eps = 1e-8
+    z_mu = z_seq.mean(1)
+    z_sigma = (z_seq.var(1) + eps).sqrt()
+    z_seq = (z_seq - z_mu.unsqueeze(1)) / z_sigma.unsqueeze(1)
+    z_seq = (z_seq * gamma) + beta
+    return z_seq
+
 class RAVENBasicModel(nn.Module):
     def __init__(self, args):
         super(RAVENBasicModel, self).__init__()
@@ -104,22 +112,18 @@ class RAVENTrans(RAVENBasicModel):
         # self.fc_tree_net = FCTreeNet(in_dim=300, img_dim=512)
         self.meta_alpha = args.meta_alpha
         self.meta_beta = args.meta_beta
-        # # Context norm
-        # self.gamma = nn.Parameter(torch.ones(512))
-        # self.beta = nn.Parameter(torch.zeros(512))
-
-    # def apply_context_norm(self, z_seq):
-    #     # Input: [T, ...]
-    #     eps = 1e-8
-    #     z_mu = z_seq.mean(0)
-    #     z_sigma = (z_seq.var(0) + eps).sqrt()
-    #     z_seq = (z_seq - z_mu.unsqueeze(0)) / z_sigma.unsqueeze(0)
-    #     z_seq = (z_seq * self.gamma) + self.beta
-    #     return z_seq
+        # Context norm
+        self.gamma = nn.Parameter(torch.ones(512))
+        self.beta = nn.Parameter(torch.zeros(512))
+        self.task_seg = [np.arange(16)]
 
     def forward(self, x, embedding, indicator):
         B = x.size(0)
         features = self.resnet18(x.view(-1, 1, 224, 224)).reshape(B, 16, -1)
+        z_seq_all_seg = []
+        for seg in range(len(self.task_seg)):
+            z_seq_all_seg.append(apply_context_norm(features[:, self.task_seg[seg], :], self.gamma, self.beta))
+        features = torch.cat(z_seq_all_seg, dim=1)
         features = self.pos_emb(features)
         # (B, T, ...) -> (T, B, ...) as required by the transformer
         features = features.transpose(0, 1)
@@ -138,7 +142,7 @@ class RAVENNTM(RAVENBasicModel):
         self.resnet18.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)
         self.resnet18.fc = identity()
         # self.mann = NTM(
-        #     self.resnet18,
+        #     None,
         #     512,
         #     8+9+21,
         #     args.batch_size,
@@ -154,7 +158,7 @@ class RAVENNTM(RAVENBasicModel):
         #     num_write_heads=2,
         #     head_beta_g_s_gamma=(1,1,3,1))
         # self.mann = SimpleNTM(
-        #     self.resnet18,
+        #     None,
         #     512,
         #     8+9+21,
         #     args.batch_size,
@@ -169,7 +173,7 @@ class RAVENNTM(RAVENBasicModel):
         #     num_read_heads=1,
         #     num_write_heads=1)
         self.mann = MRA(
-            self.resnet18,
+            None,
             512,
             8+9+21,
             args.batch_size,
@@ -186,7 +190,7 @@ class RAVENNTM(RAVENBasicModel):
             k_nn=4,
             jumpy_bp=True)
         # self.mann = MANNMeta(
-        #     self.resnet18,
+        #     None,
         #     512,
         #     8+9+21,
         #     args.batch_size,
@@ -204,7 +208,7 @@ class RAVENNTM(RAVENBasicModel):
         #     # LRUA
         #     gamma=0.9)
         # self.mann = DND(
-        #     self.resnet18,
+        #     None,
         #     512,
         #     8+9+21,
         #     args.batch_size,
@@ -222,11 +226,22 @@ class RAVENNTM(RAVENBasicModel):
         # self.fc_tree_net = FCTreeNet(in_dim=300, img_dim=512)
         self.meta_alpha = args.meta_alpha
         self.meta_beta = args.meta_beta
+        # Context norm
+        self.gamma = nn.Parameter(torch.ones(512))
+        self.beta = nn.Parameter(torch.zeros(512))
+        self.task_seg = [np.arange(16)]
 
     def forward(self, x, embedding, indicator):
         # alpha = 1.0
-        x = x.view(-1, 16, 1, 224, 224).transpose(0, 1)
-        output = self.mann(x)[0][-1]
+        B = x.size(0)
+        T = x.size(1)
+        x = x.view(-1, 16, 1, 224, 224).view(-1, 1, 224, 224)
+        features = self.resnet18(x).view(B, T, -1)
+        z_seq_all_seg = []
+        for seg in range(len(self.task_seg)):
+            z_seq_all_seg.append(apply_context_norm(features[:, self.task_seg[seg], :], self.gamma, self.beta))
+        features = torch.cat(z_seq_all_seg, dim=1).transpose(0, 1)
+        output = self.mann(features)[0][-1]
         pred = output[:,0:8]
         meta_target_pred = output[:,8:17]
         meta_struct_pred = output[:,17:38]
