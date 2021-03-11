@@ -124,3 +124,7 @@ class MANNMeta(SimpleNTM):
         self.w_u[:B] = self.gamma * self.w_u[:B] + sum(whead_state) + sum(rhead_state)
 
         return output, current_state
+
+    def forward(self, x, init_latent=None):
+        self.w_u = self.w_u.detach().fill_(0)
+        return super(MANNMeta, self).forward(x, init_latent)
