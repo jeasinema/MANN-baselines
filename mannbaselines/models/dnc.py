@@ -38,7 +38,7 @@ class SimpleNTM(nn.Module):
         read_length=None,
         write_length=None):
         super(SimpleNTM, self).__init__()
-        self.encoder = encoder
+        self.encoder = encoder if encoder else nn.Identity()
         # output size of the encoder
         self.encoder_output_size = encoder_output_size
         self.model_output_size = model_output_size

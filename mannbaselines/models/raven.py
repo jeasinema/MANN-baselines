@@ -96,7 +96,7 @@ class RAVENTrans(RAVENBasicModel):
         self.resnet18.fc = identity()
         self.transformer = nn.TransformerEncoder(
             nn.TransformerEncoderLayer(512, 8, dim_feedforward=512),
-            4,
+            1,
             nn.LayerNorm(512),
         )
         self.pos_emb = PositionalEncoding(512)

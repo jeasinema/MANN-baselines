@@ -110,12 +110,31 @@ class ESBN(nn.Module):
         pass
     def forward(self):
         self.memory.reset()
-        pas
+        pass
+
+def apply_context_norm(z_seq, gamma, beta):
+    eps = 1e-8
+    z_mu = z_seq.mean(1)
+    z_sigma = (z_seq.var(1) + eps).sqrt()
+    z_seq = (z_seq - z_mu.unsqueeze(1)) / z_sigma.unsqueeze(1)
+    z_seq = (z_seq * gamma) + beta
+    return z_seq
 
 class ESBNNTM(nn.Module):
     def __init__(self, task_gen, args):
         super(ESBNNTM, self).__init__()
         self.output_dim = task_gen.y_dim
+        # Context normalization
+        if args.norm_type == 'contextnorm' or args.norm_type == 'tasksegmented_contextnorm':
+            self.contextnorm = True
+            self.gamma = nn.Parameter(torch.ones(128))
+            self.beta = nn.Parameter(torch.zeros(128))
+        else:
+            self.contextnorm = False
+        if args.norm_type == 'tasksegmented_contextnorm':
+            self.task_seg = task_gen.task_seg
+        else:
+            self.task_seg = [np.arange(task_gen.seq_len)]
         # Encoder
         log.info('Building encoder...')
         if args.encoder == 'conv':
@@ -125,7 +144,7 @@ class ESBNNTM(nn.Module):
         elif args.encoder == 'rand':
             self.encoder = Encoder_rand(args)
         # self.mann = NTM(
-        #     self.encoder,
+        #     None,
         #     128,
         #     self.output_dim,
         #     args.batch_size,
@@ -133,47 +152,47 @@ class ESBNNTM(nn.Module):
         #     mem_size=20,
         #     mem_value_size=512,
         #     # Controller
-        #     controller='mlp',
+        #     controller='lstm',
         #     controller_hidden_units=None,
         #     controller_output_size=128,
         #     # R/W head
-        #     num_read_heads=2,
-        #     num_write_heads=2,
+        #     num_read_heads=1,
+        #     num_write_heads=1,
         #     head_beta_g_s_gamma=(1,1,3,1))
-        self.mann = SimpleNTM(
-            self.encoder,
-            128,
-            self.output_dim,
-            args.batch_size,
-            # Memory
-            mem_size=10,
-            mem_value_size=512,
-            # Controller
-            controller='lstm',
-            controller_hidden_units=None,
-            controller_output_size=128,
-            # R/W head
-            num_read_heads=1,
-            num_write_heads=1)
-        # self.mann = MRA(
-        #     self.encoder,
+        # self.mann = SimpleNTM(
+        #     None,
         #     128,
         #     self.output_dim,
         #     args.batch_size,
         #     # Memory
-        #     mem_size=20,
-        #     mem_extra_args={'key_size': 256},
+        #     mem_size=10,
+        #     mem_value_size=512,
         #     # Controller
-        #     controller='mlp',
+        #     controller='lstm',
         #     controller_hidden_units=None,
-        #     controller_output_size=256,
+        #     controller_output_size=128,
         #     # R/W head
         #     num_read_heads=1,
-        #     num_write_heads=1,
-        #     k_nn=4,
-        #     jumpy_bp=True)
+        #     num_write_heads=1)
+        self.mann = MRA(
+            None,
+            128,
+            self.output_dim,
+            args.batch_size,
+            # Memory
+            mem_size=20,
+            mem_extra_args={'key_size': 256},
+            # Controller
+            controller='lstm',
+            controller_hidden_units=None,
+            controller_output_size=256,
+            # R/W head
+            num_read_heads=1,
+            num_write_heads=1,
+            k_nn=4,
+            jumpy_bp=True)
         # self.mann = MANNMeta(
-        #     self.encoder,
+        #     None,
         #     128,
         #     self.output_dim,
         #     args.batch_size,
@@ -182,7 +201,7 @@ class ESBNNTM(nn.Module):
         #     mem_value_size=512,
         #     mem_extra_args=None,
         #     # Controller
-        #     controller='mlp',
+        #     controller='lstm',
         #     controller_hidden_units=None,
         #     controller_output_size=512,
         #     # R/W head
@@ -191,7 +210,7 @@ class ESBNNTM(nn.Module):
         #     # LRUA
         #     gamma=0.9)
         # self.mann = DND(
-        #     self.encoder,
+        #     None,
         #     128,
         #     self.output_dim,
         #     args.batch_size,
@@ -211,8 +230,13 @@ class ESBNNTM(nn.Module):
         # x: (B, T, 32, 32)
         B = x.size(0)
         T = x.size(1)
-        x = x.view(B, T, 1, 32, 32).transpose(0, 1)
-        y_pred_linear = self.mann(x)[0][-1]
+        features = self.encoder(x.view(-1, 1, 32, 32)).reshape(B, T, -1)
+        if self.contextnorm:
+            z_seq_all_seg = []
+            for seg in range(len(self.task_seg)):
+                z_seq_all_seg.append(apply_context_norm(features[:, self.task_seg[seg], :], self.gamma, self.beta))
+            features = torch.cat(z_seq_all_seg, dim=1)
+        y_pred_linear = self.mann(features.transpose(0, 1))[0][-1]
         y_pred = y_pred_linear.argmax(1)
         return y_pred_linear, y_pred
 
@@ -220,6 +244,17 @@ class ESBNLSTM(nn.Module):
     def __init__(self, task_gen, args):
         super(ESBNLSTM, self).__init__()
         self.output_dim = task_gen.y_dim
+        # Context normalization
+        if args.norm_type == 'contextnorm' or args.norm_type == 'tasksegmented_contextnorm':
+            self.contextnorm = True
+            self.gamma = nn.Parameter(torch.ones(128))
+            self.beta = nn.Parameter(torch.zeros(128))
+        else:
+            self.contextnorm = False
+        if args.norm_type == 'tasksegmented_contextnorm':
+            self.task_seg = task_gen.task_seg
+        else:
+            self.task_seg = [np.arange(task_gen.seq_len)]
         # Encoder
         log.info('Building encoder...')
         if args.encoder == 'conv':
@@ -236,6 +271,11 @@ class ESBNLSTM(nn.Module):
         B = x.size(0)
         T = x.size(1)
         features = self.encoder(x.view(-1, 1, 32, 32)).reshape(B, T, -1)
+        if self.contextnorm:
+            z_seq_all_seg = []
+            for seg in range(len(self.task_seg)):
+                z_seq_all_seg.append(apply_context_norm(features[:, self.task_seg[seg],:], self.gamma, self.beta))
+            features = torch.cat(z_seq_all_seg, dim=1)
         hidden = torch.zeros(1, B, 512).to(x)
         cell_state = torch.zeros(1, B, 512).to(x)
         final_features, _ = self.lstm(features, (hidden, cell_state))
@@ -247,6 +287,17 @@ class ESBNTrans(nn.Module):
     def __init__(self, task_gen, args):
         super(ESBNTrans, self).__init__()
         self.output_dim = task_gen.y_dim
+        # Context normalization
+        if args.norm_type == 'contextnorm' or args.norm_type == 'tasksegmented_contextnorm':
+            self.contextnorm = True
+            self.gamma = nn.Parameter(torch.ones(128))
+            self.beta = nn.Parameter(torch.zeros(128))
+        else:
+            self.contextnorm = False
+        if args.norm_type == 'tasksegmented_contextnorm':
+            self.task_seg = task_gen.task_seg
+        else:
+            self.task_seg = [np.arange(task_gen.seq_len)]
         # Encoder
         log.info('Building encoder...')
         if args.encoder == 'conv':
@@ -257,7 +308,7 @@ class ESBNTrans(nn.Module):
             self.encoder = Encoder_rand(args)
         self.transformer = nn.TransformerEncoder(
             nn.TransformerEncoderLayer(128, 8, dim_feedforward=512),
-            4,
+            1,
             nn.LayerNorm(128),
         )
         self.pos_emb = PositionalEncoding(128)
@@ -268,9 +319,12 @@ class ESBNTrans(nn.Module):
         B = x.size(0)
         T = x.size(1)
         features = self.encoder(x.view(-1, 1, 32, 32)).reshape(B, T, -1)
-        features = self.pos_emb(features)
-        # (B, T, ...) -> (T, B, ...)
-        features = features.transpose(0, 1)
+        if self.contextnorm:
+            z_seq_all_seg = []
+            for seg in range(len(self.task_seg)):
+                z_seq_all_seg.append(apply_context_norm(features[:, self.task_seg[seg], :], self.gamma, self.beta))
+            features = torch.cat(z_seq_all_seg, dim=1)
+        features = self.pos_emb(features).transpose(0, 1) # (B, T) -> (T, B)
         final_features = self.transformer(features).mean(0)
         y_pred_linear = self.output_mlp(final_features)
         y_pred = y_pred_linear.argmax(1)
