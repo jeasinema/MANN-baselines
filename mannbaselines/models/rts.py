@@ -4,8 +4,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from memory import *
-from models import SimpleNTM
+from mannbaselines.memory import *
+from mannbaselines.models import SimpleNTM
 
 
 class SimpleNTMAppending(SimpleNTM):

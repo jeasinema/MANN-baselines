@@ -3,5 +3,11 @@
 from distutils.core import setup
 setup(name='mannbaselines',
       version='0.0.1',
-      packages=['mannbaselines'],
+      packages=[
+          'mannbaselines',
+          'mannbaselines.models',
+          'mannbaselines.memory',
+          'mannbaselines.dataset',
+          'mannbaselines.utils',
+        ],
       )

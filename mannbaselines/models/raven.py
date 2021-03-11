@@ -7,10 +7,10 @@ import torch.optim as optim
 import torch.nn.functional as F
 import torchvision.models as models
 
-from .dnc import SimpleNTM, NTM
-from .mra import MRA
-from .mannmeta import MANNMeta
-from .dnd import DND
+from mannbaselines.models.dnc import SimpleNTM, NTM
+from mannbaselines.models.mra import MRA
+from mannbaselines.models.mannmeta import MANNMeta
+from mannbaselines.models.dnd import DND
 
 class RAVENBasicModel(nn.Module):
     def __init__(self, args):

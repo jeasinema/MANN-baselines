@@ -4,14 +4,14 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from memory import *
-from utils import log
+from mannbaselines.memory import *
+from mannbaselines.utils import log
 
-from .dnc import SimpleNTM, NTM
-from .mra import MRA
-from .mannmeta import MANNMeta
-from .dnd import DND
-from .raven import PositionalEncoding
+from mannbaselines.models.dnc import SimpleNTM, NTM
+from mannbaselines.models.mra import MRA
+from mannbaselines.models.mannmeta import MANNMeta
+from mannbaselines.models.dnd import DND
+from mannbaselines.models.raven import PositionalEncoding
 
 
 class Encoder_conv(nn.Module):

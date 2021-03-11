@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from memory import *
+from mannbaselines.memory import *
 
 class MNM(nn.Module):
     def __init__(self):

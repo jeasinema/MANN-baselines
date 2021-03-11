@@ -4,7 +4,7 @@ import math
 import numpy as np
 import torch.nn.functional as F
 
-from utils.torch import use_gpu
+from mannbaselines.utils.torch import use_gpu
 
 
 def normal_entropy(std):

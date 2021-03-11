@@ -8,8 +8,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from utils import *
-from memory import ValueMemory
+from mannbaselines.utils import *
+from mannbaselines.memory import ValueMemory
 
 
 class KeyValueMemory(ValueMemory):

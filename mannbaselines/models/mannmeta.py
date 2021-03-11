@@ -5,8 +5,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import haste_pytorch as haste
 
-from memory import *
-from models import SimpleNTM
+from mannbaselines.memory import *
+from mannbaselines.models import SimpleNTM
 
 
 class MANNMeta(SimpleNTM):

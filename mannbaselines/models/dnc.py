@@ -8,7 +8,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import haste_pytorch as haste
 
-from memory import *
+from mannbaselines.memory import *
 
 
 class SimpleNTM(nn.Module):
