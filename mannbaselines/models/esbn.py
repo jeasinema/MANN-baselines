@@ -112,11 +112,11 @@ class ESBN(nn.Module):
         self.memory.reset()
         pass
 
-def apply_context_norm(z_seq, gamma, beta):
+def apply_context_norm(z_seq, gamma, beta, dim=1):
     eps = 1e-8
-    z_mu = z_seq.mean(1)
-    z_sigma = (z_seq.var(1) + eps).sqrt()
-    z_seq = (z_seq - z_mu.unsqueeze(1)) / z_sigma.unsqueeze(1)
+    z_mu = z_seq.mean(dim)
+    z_sigma = (z_seq.var(dim) + eps).sqrt()
+    z_seq = (z_seq - z_mu.unsqueeze(dim)) / z_sigma.unsqueeze(dim)
     z_seq = (z_seq * gamma) + beta
     return z_seq
 
@@ -234,7 +234,7 @@ class ESBNNTM(nn.Module):
         if self.contextnorm:
             z_seq_all_seg = []
             for seg in range(len(self.task_seg)):
-                z_seq_all_seg.append(apply_context_norm(features[:, self.task_seg[seg], :], self.gamma, self.beta))
+                z_seq_all_seg.append(apply_context_norm(features[:, self.task_seg[seg], :], self.gamma, self.beta, dim=1))
             features = torch.cat(z_seq_all_seg, dim=1)
         y_pred_linear = self.mann(features.transpose(0, 1))[0][-1]
         y_pred = y_pred_linear.argmax(1)
@@ -274,7 +274,7 @@ class ESBNLSTM(nn.Module):
         if self.contextnorm:
             z_seq_all_seg = []
             for seg in range(len(self.task_seg)):
-                z_seq_all_seg.append(apply_context_norm(features[:, self.task_seg[seg],:], self.gamma, self.beta))
+                z_seq_all_seg.append(apply_context_norm(features[:, self.task_seg[seg],:], self.gamma, self.beta, dim=1))
             features = torch.cat(z_seq_all_seg, dim=1)
         hidden = torch.zeros(1, B, 512).to(x)
         cell_state = torch.zeros(1, B, 512).to(x)
@@ -322,7 +322,7 @@ class ESBNTrans(nn.Module):
         if self.contextnorm:
             z_seq_all_seg = []
             for seg in range(len(self.task_seg)):
-                z_seq_all_seg.append(apply_context_norm(features[:, self.task_seg[seg], :], self.gamma, self.beta))
+                z_seq_all_seg.append(apply_context_norm(features[:, self.task_seg[seg], :], self.gamma, self.beta, dim=1))
             features = torch.cat(z_seq_all_seg, dim=1)
         features = self.pos_emb(features).transpose(0, 1) # (B, T) -> (T, B)
         final_features = self.transformer(features).mean(0)

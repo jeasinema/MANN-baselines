@@ -12,11 +12,11 @@ from mannbaselines.models.mra import MRA
 from mannbaselines.models.mannmeta import MANNMeta
 from mannbaselines.models.dnd import DND
 
-def apply_context_norm(z_seq, gamma, beta):
+def apply_context_norm(z_seq, gamma, beta, dim=1):
     eps = 1e-8
-    z_mu = z_seq.mean(1)
-    z_sigma = (z_seq.var(1) + eps).sqrt()
-    z_seq = (z_seq - z_mu.unsqueeze(1)) / z_sigma.unsqueeze(1)
+    z_mu = z_seq.mean(dim)
+    z_sigma = (z_seq.var(dim) + eps).sqrt()
+    z_seq = (z_seq - z_mu.unsqueeze(dim)) / z_sigma.unsqueeze(dim)
     z_seq = (z_seq * gamma) + beta
     return z_seq
 
@@ -122,7 +122,7 @@ class RAVENTrans(RAVENBasicModel):
         features = self.resnet18(x.view(-1, 1, 224, 224)).reshape(B, 16, -1)
         z_seq_all_seg = []
         for seg in range(len(self.task_seg)):
-            z_seq_all_seg.append(apply_context_norm(features[:, self.task_seg[seg], :], self.gamma, self.beta))
+            z_seq_all_seg.append(apply_context_norm(features[:, self.task_seg[seg], :], self.gamma, self.beta, dim=1))
         features = torch.cat(z_seq_all_seg, dim=1)
         features = self.pos_emb(features)
         # (B, T, ...) -> (T, B, ...) as required by the transformer
@@ -181,7 +181,7 @@ class RAVENNTM(RAVENBasicModel):
             mem_size=20,
             mem_extra_args={'key_size': 256},
             # Controller
-            controller='mlp',
+            controller='lstm',
             controller_hidden_units=None,
             controller_output_size=256,
             # R/W head
@@ -239,7 +239,7 @@ class RAVENNTM(RAVENBasicModel):
         features = self.resnet18(x).view(B, T, -1)
         z_seq_all_seg = []
         for seg in range(len(self.task_seg)):
-            z_seq_all_seg.append(apply_context_norm(features[:, self.task_seg[seg], :], self.gamma, self.beta))
+            z_seq_all_seg.append(apply_context_norm(features[:, self.task_seg[seg], :], self.gamma, self.beta, dim=1))
         features = torch.cat(z_seq_all_seg, dim=1).transpose(0, 1)
         output = self.mann(features)[0][-1]
         pred = output[:,0:8]
