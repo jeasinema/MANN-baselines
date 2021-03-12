@@ -203,7 +203,7 @@ class ESBNNTM(nn.Module):
         #     # Controller
         #     controller='lstm',
         #     controller_hidden_units=None,
-        #     controller_output_size=512,
+        #     controller_output_size=256,
         #     # R/W head
         #     num_read_heads=1,
         #     num_write_heads=1,
@@ -220,11 +220,11 @@ class ESBNNTM(nn.Module):
         #     # Controller
         #     controller='lstm',
         #     controller_hidden_units=None,
-        #     controller_output_size=128,
+        #     controller_output_size=256,
         #     # R/W head
         #     num_read_heads=1,
         #     num_write_heads=1,
-        #     k_nn=1)
+        #     k_nn=4)
 
     def forward(self, x, device):
         # x: (B, T, 32, 32)

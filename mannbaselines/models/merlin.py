@@ -27,6 +27,7 @@ class RLMEM(SimpleNTM):
         # Memory
         mem_size=10,
         mem_value_size=256,
+        mem_extra_args=None,
         # Controller
         controller='lstm',
         controller_hidden_units=None,
